@@ -26,22 +26,22 @@ product thesis expressed as a constraint.
 
 **Conventions**
 
-| | |
-|---|---|
-| Primary keys | `uuid`, `server_default=gen_random_uuid()` (native in PG13+, no `pgcrypto` needed) |
-| Instants | `timestamptz` — never `timestamp`, never `date` |
-| Calendar dates | `date` only where a wall-clock day is genuinely meant (`due_date`, `expected_close_date`) |
-| Money | `numeric(14,2)` + `currency char(3)` |
-| Free text | `text`, never `varchar(n)` unless a real limit exists |
-| Email | `varchar(320)` |
-| Timestamps | every table carries `created_at`; mutable tables also carry `updated_at` |
+| Concern         | Rule                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| Primary keys    | `uuid`, `server_default=gen_random_uuid()` (native in PG13+, no `pgcrypto` needed) |
+| Instants        | `timestamptz` — never `timestamp`, never `date`                        |
+| Calendar dates  | `date` only where a wall-clock day is genuinely meant (`due_date`, `expected_close_date`) |
+| Money           | `numeric(14,2)` + `currency char(3)`                                    |
+| Free text       | `text`, never `varchar(n)` unless a real limit exists                  |
+| Email           | `varchar(320)`                                                          |
+| Timestamps      | every table carries `created_at`; mutable tables also carry `updated_at` |
 
-**Enum strategy.** Native Postgres enums for sets that will not churn
-(`deal_stage`, `severity`, `risk_level`, `verdict`). Plain `text` + a `CHECK`
-constraint for sets that *will* churn as prompts are tuned (`risk_type`,
-`fact_type`, `action_type`, `activity_type`). Altering a native enum inside
-Alembic is more friction than it is worth for the churny ones, and those are
-exactly the ones that change weekly during agent development.
+**Enum strategy**
+
+| Approach                          | Used for                                                            | Why |
+| ---------------------------------- | -------------------------------------------------------------------- | --- |
+| Native Postgres enum               | `deal_stage`, `severity`, `risk_level`, `verdict`                   | Sets that will not churn |
+| `text` + `CHECK` constraint        | `risk_type`, `fact_type`, `action_type`, `activity_type`             | Sets that *will* churn as prompts are tuned — altering a native enum in Alembic is more friction than it's worth for values that change weekly during agent development |
 
 ---
 
@@ -50,18 +50,52 @@ exactly the ones that change weekly during agent development.
 Human-owned records. These are what the future synthetic seeder writes.
 
 ### `accounts`
-`id` · `name` · `industry` · `website` · `employee_band` · `hq_region` · `created_at` · `updated_at`
+
+| Column          | Type / reference |
+| ---------------- | ------------------ |
+| `id`            | uuid, PK          |
+| `name`          |                   |
+| `industry`      |                   |
+| `website`       |                   |
+| `employee_band` |                   |
+| `hq_region`     |                   |
+| `created_at`    |                   |
+| `updated_at`    |                   |
 
 ### `contacts`
-`id` · `account_id` → accounts · `first_name` · `last_name` · `email` · `title` · `phone` · `created_at` · `updated_at`
+
+| Column         | Type / reference     |
+| --------------- | ---------------------- |
+| `id`           | uuid, PK              |
+| `account_id`   | → `accounts`          |
+| `first_name`   |                       |
+| `last_name`    |                       |
+| `email`        |                       |
+| `title`        |                       |
+| `phone`        |                       |
+| `created_at`   |                       |
+| `updated_at`   |                       |
 
 Contacts belong to the **account**, not to a deal. A stakeholder can appear in
 several deals with the same company, and the selling metadata is per-deal.
 
 ### `deals`
-`id` · `account_id` → accounts · `name` · `value numeric(14,2)` · `currency` ·
-`stage deal_stage` · `win_probability smallint` · `risk_level risk_level` ·
-`expected_close_date date` · `closed_at` · `last_activity_at` · `created_at` · `updated_at`
+
+| Column                 | Type / reference           |
+| ----------------------- | ---------------------------- |
+| `id`                   | uuid, PK                    |
+| `account_id`           | → `accounts`                |
+| `name`                 |                             |
+| `value`                | `numeric(14,2)`             |
+| `currency`             |                             |
+| `stage`                | `deal_stage` enum           |
+| `win_probability`      | `smallint`                  |
+| `risk_level`           | `risk_level` enum           |
+| `expected_close_date`  | `date`                      |
+| `closed_at`            |                             |
+| `last_activity_at`     |                             |
+| `created_at`           |                             |
+| `updated_at`           |                             |
 
 - **No `status` column.** `stage` carries the whole lifecycle; the existing
   `deal_stage` enum already includes `closed_won` / `closed_lost`. Open pipeline
@@ -71,30 +105,67 @@ several deals with the same company, and the selling metadata is per-deal.
   in `tasks`. A denormalized copy of "the next action" is a copy that goes stale.
 
 ### `deal_contacts`
-`PK(deal_id, contact_id)` · `buying_role` · `influence` · `sentiment` · `is_primary bool` · `notes` · `created_at` · `updated_at`
 
-`buying_role ∈ (champion, economic_buyer, technical, blocker, influencer, unknown)`
+| Column         | Type / reference                                                  |
+| --------------- | -------------------------------------------------------------------- |
+| —              | `PK(deal_id, contact_id)`                                           |
+| `buying_role`  | `∈ (champion, economic_buyer, technical, blocker, influencer, unknown)` |
+| `influence`    |                                                                      |
+| `sentiment`    |                                                                      |
+| `is_primary`   | `bool`                                                              |
+| `notes`        |                                                                      |
+| `created_at`   |                                                                      |
+| `updated_at`   |                                                                      |
 
 This table is what makes *"no economic buyer has ever attended a meeting"* a SQL
 query instead of a model's guess. Missing-stakeholder detection lives or dies here.
 
 ### `deal_stage_history`
-`id` · `deal_id` → deals · `from_stage` · `to_stage` · `changed_at` · `note`
+
+| Column        | Type / reference |
+| -------------- | ------------------ |
+| `id`          | uuid, PK          |
+| `deal_id`     | → `deals`         |
+| `from_stage`  |                   |
+| `to_stage`    |                   |
+| `changed_at`  |                   |
+| `note`        |                   |
 
 Feeds stalled-deal risk detection. Cheap to maintain, impossible to reconstruct
 later if skipped.
 
 ### `meetings`
-`id` · `deal_id` → deals · `title` · `meeting_type` · `status` ·
-`scheduled_at` · `started_at` · `ended_at` ·
-`transcript_document_id` → documents (nullable) ·
-`summary text` · `sentiment` · `analysis_status` · `analyzed_at` · `created_at` · `updated_at`
 
-`analysis_status ∈ (not_started, queued, running, complete, failed)` — this is
-what the Meeting Analyzer screen polls.
+| Column                    | Type / reference                     |
+| -------------------------- | --------------------------------------- |
+| `id`                      | uuid, PK                               |
+| `deal_id`                 | → `deals`                              |
+| `title`                   |                                        |
+| `meeting_type`            |                                        |
+| `status`                  |                                        |
+| `scheduled_at`            |                                        |
+| `started_at`              |                                        |
+| `ended_at`                |                                        |
+| `transcript_document_id`  | → `documents` (nullable)               |
+| `summary`                 | `text`                                 |
+| `sentiment`               |                                        |
+| `analysis_status`         | `∈ (not_started, queued, running, complete, failed)` |
+| `analyzed_at`             |                                        |
+| `created_at`              |                                        |
+| `updated_at`              |                                        |
+
+`analysis_status` is what the Meeting Analyzer screen polls.
 
 ### `meeting_attendees`
-`id` · `meeting_id` → meetings · `contact_id` → contacts (nullable) · `raw_name text` · `is_internal bool` · `attended bool`
+
+| Column          | Type / reference          |
+| ---------------- | ---------------------------- |
+| `id`            | uuid, PK                    |
+| `meeting_id`    | → `meetings`                |
+| `contact_id`    | → `contacts` (nullable)     |
+| `raw_name`      | `text`                      |
+| `is_internal`   | `bool`                      |
+| `attended`      | `bool`                      |
 
 `contact_id` is nullable **on purpose**. Transcript speakers frequently are not
 in `contacts` yet, and those are precisely the people worth surfacing — a name in
@@ -102,17 +173,36 @@ a transcript that maps to no known contact is the raw signal for
 "missing stakeholder."
 
 ### `tasks`
-`id` · `deal_id` → deals · `title` · `description` · `due_date date` · `status` ·
-`priority` · `origin` · `source_fact_id` → extracted_facts (nullable) ·
-`completed_at` · `created_at` · `updated_at`
 
-`status ∈ (open, done, cancelled)` · `origin ∈ (user, ai)`
+| Column            | Type / reference                          |
+| ------------------ | -------------------------------------------- |
+| `id`              | uuid, PK                                    |
+| `deal_id`         | → `deals`                                   |
+| `title`           |                                             |
+| `description`     |                                             |
+| `due_date`        | `date`                                      |
+| `status`          | `∈ (open, done, cancelled)`                 |
+| `priority`        |                                             |
+| `origin`          | `∈ (user, ai)`                              |
+| `source_fact_id`  | → `extracted_facts` (nullable)              |
+| `completed_at`    |                                             |
+| `created_at`      |                                             |
+| `updated_at`      |                                             |
 
 Powers the dashboard's overdue-actions panel and the deal's next action.
 
 ### `activities`
-`id` · `deal_id` → deals · `contact_id` (nullable) · `meeting_id` (nullable) ·
-`activity_type` · `summary` · `occurred_at` · `created_at`
+
+| Column            | Type / reference       |
+| ------------------ | ------------------------- |
+| `id`              | uuid, PK                 |
+| `deal_id`         | → `deals`                |
+| `contact_id`      | nullable                 |
+| `meeting_id`      | nullable                 |
+| `activity_type`   |                          |
+| `summary`         |                          |
+| `occurred_at`     |                          |
+| `created_at`      |                          |
 
 Append-only timeline log. Optional — the deal timeline can instead be a
 `UNION ALL` over meetings, tasks, stage history and documents. Keeping the table
@@ -123,13 +213,26 @@ costs a write per event; dropping it costs a slower, messier timeline query.
 ## 3. Layer B — Knowledge and ingest
 
 ### `documents`
-`id` · `deal_id` → deals (nullable) · `account_id` → accounts (nullable) ·
-`source_type` · `title` · `original_filename` · `storage_uri` · `mime_type` ·
-`byte_size` · `content_hash` · `raw_text text` ·
-`occurred_at` · `uploaded_at` · `ingest_status` · `ingest_error` · `created_at` · `updated_at`
 
-`source_type ∈ (meeting_transcript, email, proposal, contract, note)`
-`ingest_status ∈ (pending, parsing, chunking, embedding, ready, failed)`
+| Column                | Type / reference                                                  |
+| ---------------------- | -------------------------------------------------------------------- |
+| `id`                  | uuid, PK                                                             |
+| `deal_id`             | → `deals` (nullable)                                                 |
+| `account_id`          | → `accounts` (nullable)                                              |
+| `source_type`         | `∈ (meeting_transcript, email, proposal, contract, note)`           |
+| `title`               |                                                                      |
+| `original_filename`   |                                                                      |
+| `storage_uri`         |                                                                      |
+| `mime_type`           |                                                                      |
+| `byte_size`           |                                                                      |
+| `content_hash`        |                                                                      |
+| `raw_text`            | `text`                                                               |
+| `occurred_at`         |                                                                      |
+| `uploaded_at`         |                                                                      |
+| `ingest_status`       | `∈ (pending, parsing, chunking, embedding, ready, failed)`           |
+| `ingest_error`        |                                                                      |
+| `created_at`          |                                                                      |
+| `updated_at`          |                                                                      |
 
 **One table for every unstructured input.** Separate tables per type would fork
 retrieval five ways for no benefit — a RAG query wants "everything relevant to
@@ -141,8 +244,17 @@ this deal," not five unions.
 - `content_hash` makes re-upload idempotent and keeps the future seeder re-runnable.
 
 ### `document_chunks`
-`id` · `document_id` → documents `ON DELETE CASCADE` · `chunk_index int` ·
-`content text` · `token_count int` · `embedding vector(1536)` · `metadata jsonb` · `created_at`
+
+| Column          | Type / reference                        |
+| ---------------- | ------------------------------------------ |
+| `id`            | uuid, PK                                  |
+| `document_id`   | → `documents`, `ON DELETE CASCADE`        |
+| `chunk_index`   | `int`                                     |
+| `content`       | `text`                                    |
+| `token_count`   | `int`                                     |
+| `embedding`     | `vector(1536)`                            |
+| `metadata`      | `jsonb`                                   |
+| `created_at`    |                                           |
 
 `UNIQUE(document_id, chunk_index)`
 
@@ -159,12 +271,21 @@ were perfectly good.
 ## 4. Layer C — Assertions and evidence
 
 ### `evidence`
-`id` · `deal_id` → deals · `source_kind` ·
-`document_id` → documents (nullable) · `chunk_id` → document_chunks (nullable) ·
-`record_ref jsonb` · `snippet text` · `char_start int` · `char_end int` ·
-`speaker` · `occurred_at` · `created_at`
 
-`source_kind ∈ (document, record, derived)`
+| Column          | Type / reference                       |
+| ---------------- | ----------------------------------------- |
+| `id`            | uuid, PK                                 |
+| `deal_id`       | → `deals`                                |
+| `source_kind`   | `∈ (document, record, derived)`          |
+| `document_id`   | → `documents` (nullable)                 |
+| `chunk_id`      | → `document_chunks` (nullable)           |
+| `record_ref`    | `jsonb`                                  |
+| `snippet`       | `text`                                   |
+| `char_start`    | `int`                                    |
+| `char_end`      | `int`                                    |
+| `speaker`       |                                          |
+| `occurred_at`   |                                          |
+| `created_at`    |                                          |
 
 A piece of evidence is a **locatable span**, not a description. Two flavors:
 
@@ -180,40 +301,90 @@ only point at document chunks, every one of those risks would render uncited and
 look like a hunch, and the evidence-coverage metric would lie.
 
 ### `claim_evidence`
-`id` · `claim_type` · `claim_id uuid` · `evidence_id` → evidence `ON DELETE CASCADE` · `relevance numeric(3,2)` · `created_at`
+
+| Column         | Type / reference                                                        |
+| --------------- | --------------------------------------------------------------------------- |
+| `id`           | uuid, PK                                                                    |
+| `claim_type`   | `∈ (fact, commitment, risk, recommendation, chat_message)`                 |
+| `claim_id`     | `uuid` (no FK — polymorphic, see §4.1)                                     |
+| `evidence_id`  | → `evidence`, `ON DELETE CASCADE`                                          |
+| `relevance`    | `numeric(3,2)`                                                             |
+| `created_at`   |                                                                             |
 
 `UNIQUE(claim_type, claim_id, evidence_id)`
-`claim_type ∈ (fact, commitment, risk, recommendation, chat_message)`
 
 **This is the spine of the product.** See §4.1.
 
 ### `claim_validations`
-`id` · `claim_type` · `claim_id uuid` · `verdict` · `method` · `rationale text` ·
-`model` · `validator_version` · `checked_at`
 
-`verdict ∈ (supported, partial, contradicted, unsupported)` · `method ∈ (deterministic, llm, human)`
+| Column               | Type / reference                                              |
+| --------------------- | ------------------------------------------------------------------ |
+| `id`                 | uuid, PK                                                           |
+| `claim_type`         |                                                                     |
+| `claim_id`           | `uuid`                                                             |
+| `verdict`            | `∈ (supported, partial, contradicted, unsupported)`                |
+| `method`             | `∈ (deterministic, llm, human)`                                    |
+| `rationale`          | `text`                                                             |
+| `model`              |                                                                     |
+| `validator_version`  |                                                                     |
+| `checked_at`         |                                                                     |
 
 Append-only: one row per validation run. See §5.
 
 ### `extracted_facts`
-`id` · `deal_id` → deals · `meeting_id` (nullable) · `document_id` (nullable) ·
-`fact_type` · `content text` · `payload jsonb` · `confidence numeric(3,2)` ·
-`status` · `promoted_to_type` · `promoted_to_id` · `extracted_at` · `reviewed_at`
 
-`fact_type ∈ (requirement, objection, stakeholder, commitment, deadline, budget, competitor, decision_criteria)`
-`status ∈ (pending, accepted, rejected, superseded)`
+| Column             | Type / reference                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `id`               | uuid, PK                                                                                         |
+| `deal_id`          | → `deals`                                                                                        |
+| `meeting_id`       | nullable                                                                                         |
+| `document_id`      | nullable                                                                                         |
+| `fact_type`        | `∈ (requirement, objection, stakeholder, commitment, deadline, budget, competitor, decision_criteria)` |
+| `content`          | `text`                                                                                           |
+| `payload`          | `jsonb`                                                                                          |
+| `confidence`       | `numeric(3,2)`                                                                                   |
+| `status`           | `∈ (pending, accepted, rejected, superseded)`                                                    |
+| `promoted_to_type` |                                                                                                   |
+| `promoted_to_id`   |                                                                                                   |
+| `extracted_at`     |                                                                                                   |
+| `reviewed_at`      |                                                                                                   |
 
 ### `commitments`
-`id` · `deal_id` → deals · `source_fact_id` (nullable) · `description` ·
-`owner_side` · `owner_contact_id` (nullable) · `owner_name` · `due_date date` ·
-`status` · `origin` · `confidence` · `created_at` · `updated_at`
 
-`owner_side ∈ (us, customer)` · `status ∈ (pending, met, missed, waived)`
+| Column             | Type / reference                       |
+| -------------------- | ------------------------------------------ |
+| `id`               | uuid, PK                                   |
+| `deal_id`          | → `deals`                                  |
+| `source_fact_id`   | nullable                                   |
+| `description`      |                                            |
+| `owner_side`       | `∈ (us, customer)`                         |
+| `owner_contact_id` | nullable                                   |
+| `owner_name`       |                                            |
+| `due_date`         | `date`                                     |
+| `status`           | `∈ (pending, met, missed, waived)`         |
+| `origin`           |                                            |
+| `confidence`       |                                            |
+| `created_at`       |                                            |
+| `updated_at`       |                                            |
 
 ### `risks`
-`id` · `deal_id` → deals · `risk_type` · `title` · `description` · `severity` ·
-`status` · `origin` · `confidence` ·
-`first_detected_at` · `last_seen_at` · `resolved_at` · `created_at` · `updated_at`
+
+| Column               | Type / reference |
+| ---------------------- | ------------------ |
+| `id`                 | uuid, PK          |
+| `deal_id`            | → `deals`         |
+| `risk_type`          |                   |
+| `title`              |                   |
+| `description`        |                   |
+| `severity`           |                   |
+| `status`             |                   |
+| `origin`             |                   |
+| `confidence`         |                   |
+| `first_detected_at`  |                   |
+| `last_seen_at`       |                   |
+| `resolved_at`        |                   |
+| `created_at`         |                   |
+| `updated_at`         |                   |
 
 ```sql
 CREATE UNIQUE INDEX uq_risks_open_type ON risks (deal_id, risk_type)
@@ -225,25 +396,65 @@ Re-running the analyzer must **bump `last_seen_at`, not insert a fifth copy** of
 within a week.
 
 ### `recommendations`
-`id` · `deal_id` → deals · `title` · `description` · `rationale` · `action_type` ·
-`priority` · `confidence` · `status` · `generated_at` · `decided_at` ·
-`created_task_id` → tasks (nullable) · `created_at` · `updated_at`
+
+| Column             | Type / reference          |
+| -------------------- | ---------------------------- |
+| `id`               | uuid, PK                     |
+| `deal_id`          | → `deals`                    |
+| `title`            |                              |
+| `description`      |                              |
+| `rationale`        |                              |
+| `action_type`      |                              |
+| `priority`         |                              |
+| `confidence`       |                              |
+| `status`           |                              |
+| `generated_at`     |                              |
+| `decided_at`       |                              |
+| `created_task_id`  | → `tasks` (nullable)         |
+| `created_at`       |                              |
+| `updated_at`       |                              |
 
 ### `meeting_briefs`
-`id` · `meeting_id` → meetings · `objectives jsonb` · `context_summary text` ·
-`key_risks jsonb` · `recommended_questions jsonb` · `model` · `generated_at`
+
+| Column                   | Type / reference |
+| -------------------------- | ------------------ |
+| `id`                     | uuid, PK          |
+| `meeting_id`             | → `meetings`      |
+| `objectives`             | `jsonb`           |
+| `context_summary`        | `text`            |
+| `key_risks`               | `jsonb`           |
+| `recommended_questions`  | `jsonb`           |
+| `model`                  |                   |
+| `generated_at`           |                   |
 
 Persisted so Meeting Prep survives a page reload instead of costing a
 regeneration every time.
 
-### `chat_sessions` / `chat_messages`
-```
-chat_sessions   id · scope (global|deal) · deal_id (nullable) · title
-                · last_message_at · created_at · updated_at
-chat_messages   id · session_id → chat_sessions · role · content text
-                · status (streaming|complete|error) · model
-                · token_usage jsonb · latency_ms · created_at
-```
+### `chat_sessions`
+
+| Column           | Type / reference          |
+| ------------------ | ---------------------------- |
+| `id`             | uuid, PK                     |
+| `scope`          | `∈ (global, deal)`           |
+| `deal_id`        | nullable                     |
+| `title`          |                              |
+| `last_message_at`|                              |
+| `created_at`     |                              |
+| `updated_at`     |                              |
+
+### `chat_messages`
+
+| Column          | Type / reference                     |
+| ----------------- | --------------------------------------- |
+| `id`            | uuid, PK                               |
+| `session_id`    | → `chat_sessions`                       |
+| `role`          |                                        |
+| `content`       | `text`                                 |
+| `status`        | `∈ (streaming, complete, error)`        |
+| `model`         |                                        |
+| `token_usage`   | `jsonb`                                |
+| `latency_ms`    |                                        |
+| `created_at`    |                                        |
 
 Citations reuse `claim_evidence` with `claim_type='chat_message'` — no separate
 citations table. `status='streaming'` gives SSE a row to write into, so a refresh
@@ -358,12 +569,12 @@ span_missing, value_drifted, stale)`.
 
 Given the claim and **only** the cited spans:
 
-| verdict | meaning | handling |
-|---|---|---|
-| `supported` | every atomic assertion is entailed | surface normally |
-| `partial` | some entailed, others not | surface with a caution badge |
-| `contradicted` | evidence says the opposite | auto-quarantine, never render |
-| `unsupported` | evidence is real but does not address the claim | hide, log for eval |
+| Verdict         | Meaning                                        | Handling |
+| ----------------- | ------------------------------------------------- | ---------- |
+| `supported`      | every atomic assertion is entailed              | surface normally |
+| `partial`        | some entailed, others not                       | surface with a caution badge |
+| `contradicted`   | evidence says the opposite                      | auto-quarantine, never render |
+| `unsupported`    | evidence is real but does not address the claim | hide, log for eval |
 
 **The critical constraint: the validator sees the evidence spans and nothing
 else.** No transcript, no deal record, no extraction context. Given the source
@@ -412,14 +623,14 @@ Without the column the coverage metric silently mixes two populations.
 
 Today is **2026-09-24**.
 
-| | |
-|---|---|
-| Deal | SecureFlow Enterprise — Northwind Logistics |
-| `value` | $180,000 |
-| `stage` | `discovery`, unchanged since 2026-07-28 (**58 days**) |
-| `expected_close_date` | 2026-10-15 (**21 days out**) |
-| `deal_contacts` | Priya Raman (Dir. IT Security, champion), Marcus Webb (Platform Lead, technical) |
-| AE | Maya Chen — ~14 open deals, has not opened this one in nine days |
+| Field                  | Value |
+| ------------------------ | ------- |
+| Deal                   | SecureFlow Enterprise — Northwind Logistics |
+| `value`                | $180,000 |
+| `stage`                | `discovery`, unchanged since 2026-07-28 (**58 days**) |
+| `expected_close_date`  | 2026-10-15 (**21 days out**) |
+| `deal_contacts`        | Priya Raman (Dir. IT Security, champion), Marcus Webb (Platform Lead, technical) |
+| AE                     | Maya Chen — ~14 open deals, has not opened this one in nine days |
 
 ### 6.1 The transcript lands
 
@@ -448,7 +659,7 @@ relevant stretch is `chunk_index=11`:
 ### 6.2 Evidence rows
 
 | id | kind | points at | snippet |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `e1` | document | chunk 11, chars 48–121 | *"I can't start procurement until your SOC 2 Type II is in hand"* — Priya Raman |
 | `e2` | document | chunk 11, chars 203–282 | *"I'll get you the SOC 2 Type II and the latest pen test summary by Friday"* — Tom Alvarez |
 | `e3` | document | chunk 11, chars 297–412 | *"Once I've reviewed it, I can loop Dave in — he'd need to sign off on anything over 150… Dave Okonkwo, our CFO"* — Priya Raman |
@@ -523,7 +734,7 @@ and accept it. **Three minutes, no typing.**
 New evidence rows, no document involved:
 
 | id | kind | `record_ref` | snippet |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `r_e1` | record | `{"table":"deals","field":"expected_close_date"}` | "expected_close_date = 2026-10-15" |
 | `r_e2` | record | `{"table":"deal_stage_history","id":"h9"}` | "stage = discovery since 2026-07-28 (58 days)" |
 | `r_e3` | record | `{"table":"deal_contacts","field":"buying_role"}` | "no contact with buying_role='economic_buyer' has attended a meeting" |
@@ -594,25 +805,15 @@ here is true."*
 
 ## 7. pgvector
 
-**Image.** `postgres:16` ships no vector extension. Use
-`pgvector/pgvector:pg16`, which is the stock Postgres image plus the extension
-binaries. The data volume is compatible; no dump/restore needed.
+| Concern      | Detail |
+| -------------- | -------- |
+| **Image**    | `postgres:16` ships no vector extension. Use `pgvector/pgvector:pg16`, which is the stock Postgres image plus the extension binaries. The data volume is compatible; no dump/restore needed. |
+| **Extension** | `CREATE EXTENSION IF NOT EXISTS vector;` in the first migration, before any table using the type. |
+| **Python**   | `pgvector` package → `from pgvector.sqlalchemy import Vector`. Alembic autogenerate emits `Vector(1536)` **without** adding the import to the generated migration — add `import pgvector.sqlalchemy` to any migration touching `document_chunks`, or the upgrade fails with `NameError`. |
+| **Dimension** | Pinned in settings as `EMBEDDING_DIM` (1536 for `text-embedding-3-small`). The column type bakes the number in, so changing models later means a new column and a re-embed — assert the configured dimension against the column at startup so a mismatch fails loudly rather than at query time. |
+| **Query shape** | Always filter by `deal_id` *before* the vector search for deal-scoped chat; a join to `documents` with a `WHERE deal_id = :id` ahead of the `ORDER BY embedding <=> :q LIMIT k` keeps one deal's chat from retrieving another's transcript. |
 
-**Extension.** `CREATE EXTENSION IF NOT EXISTS vector;` in the first migration,
-before any table using the type.
-
-**Python.** `pgvector` package → `from pgvector.sqlalchemy import Vector`.
-Alembic autogenerate emits `Vector(1536)` **without** adding the import to the
-generated migration — add `import pgvector.sqlalchemy` to any migration touching
-`document_chunks`, or the upgrade fails with `NameError`.
-
-**Dimension.** Pinned in settings as `EMBEDDING_DIM` (1536 for
-`text-embedding-3-small`). The column type bakes the number in, so changing
-models later means a new column and a re-embed — assert the configured dimension
-against the column at startup so a mismatch fails loudly rather than at query
-time.
-
-**Index.**
+**Index**
 
 ```sql
 CREATE INDEX ix_document_chunks_embedding ON document_chunks
@@ -625,11 +826,6 @@ embeddings. At MVP volumes the index is not yet load-bearing — a sequential sc
 over a few thousand chunks is fine — but creating it now means the query operator
 never changes later.
 
-**Query shape.** Always filter by `deal_id` *before* the vector search for
-deal-scoped chat; a join to `documents` with a `WHERE deal_id = :id` ahead of the
-`ORDER BY embedding <=> :q LIMIT k` keeps one deal's chat from retrieving
-another's transcript.
-
 ---
 
 ## 8. Migration order
@@ -638,7 +834,7 @@ Existing head: `b3f2c4a1d9e7`. `accounts` and `deals` already exist, so M1
 **alters** them rather than creating them.
 
 | # | Contents | Notes |
-|---|---|---|
+| --- | ---------- | ------- |
 | M1 | `CREATE EXTENSION vector`; alter `accounts`, `deals`; create `contacts`, `deal_contacts`, `deal_stage_history` | `deals.close_date` → `expected_close_date`; add `currency`, `win_probability`, `closed_at`; drop `next_action`, `next_action_due_date` |
 | M2 | `meetings`, `meeting_attendees`, `tasks`, `activities` | `meetings.transcript_document_id` FK added in M3 |
 | M3 | `documents`, `document_chunks` + HNSW index | needs `import pgvector.sqlalchemy` |
@@ -648,22 +844,25 @@ Existing head: `b3f2c4a1d9e7`. `accounts` and `deals` already exist, so M1
 
 ## 9. Indexes beyond the foreign keys
 
-```
-deals            (stage, expected_close_date)
-tasks            (status, due_date) WHERE status = 'open'
-documents        (deal_id, occurred_at DESC)
-documents        (content_hash)
-document_chunks  USING hnsw (embedding vector_cosine_ops)
-evidence         (deal_id)
-claim_evidence   (claim_type, claim_id)
-claim_evidence   (evidence_id)
-claim_validations(claim_type, claim_id, checked_at DESC)
-risks            (deal_id, risk_type) UNIQUE WHERE status = 'open'
-```
+| Table | Index |
+| ------- | ------- |
+| `deals`             | `(stage, expected_close_date)` |
+| `tasks`             | `(status, due_date) WHERE status = 'open'` |
+| `documents`         | `(deal_id, occurred_at DESC)` |
+| `documents`         | `(content_hash)` |
+| `document_chunks`   | `USING hnsw (embedding vector_cosine_ops)` |
+| `evidence`          | `(deal_id)` |
+| `claim_evidence`    | `(claim_type, claim_id)` |
+| `claim_evidence`    | `(evidence_id)` |
+| `claim_validations` | `(claim_type, claim_id, checked_at DESC)` |
+| `risks`             | `(deal_id, risk_type) UNIQUE WHERE status = 'open'` |
 
 ## 10. Deferred
 
-CRM suggestion / approval tables, `ai_runs` (Langfuse covers tracing), document
-versioning, org and user tables, and data seeding — the seeder writes Layer A plus
-`documents.raw_text` only, never Layer C. Seeding fabricated risks and commitments
-directly would destroy the ability to tell whether extraction actually works.
+| Item | Reason |
+| ------ | -------- |
+| CRM suggestion / approval tables | Not needed for MVP |
+| `ai_runs`                        | Langfuse covers tracing |
+| Document versioning              | Not needed for MVP |
+| Org and user tables              | No auth / multi-tenant in MVP |
+| Data seeding                     | The seeder writes Layer A plus `documents.raw_text` only, never Layer C — seeding fabricated risks and commitments directly would destroy the ability to tell whether extraction actually works |
