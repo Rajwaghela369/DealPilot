@@ -1,0 +1,84 @@
+services:
+  postgres:
+    # Stock Postgres 16 plus the pgvector extension binaries -- the plain
+    # postgres:16 image cannot CREATE EXTENSION vector, which the
+    # document_chunks.embedding column depends on. Same upstream server, so
+    # the data volume format is unchanged.
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    # These ${VAR} substitutions are filled from the root .env (copy from
+    # .env.example) -- docker compose auto-loads that file since it sits
+    # next to this one. Separate from backend/.env, which the FastAPI app
+    # itself reads at runtime.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dealpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dealpilot}
+      POSTGRES_DB: ${POSTGRES_DB:-dealpilot}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - dealpilot_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # $$ so compose passes a literal $ to the container shell, where
+      # POSTGRES_USER/POSTGRES_DB are already set by the postgres image.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Web UI for inspecting the database -- browse tables, run queries, and
+  # see exactly which migration is applied via the `alembic_version` table
+  # (Alembic itself only tracks this as a single row, with no UI of its own).
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@dealpilot.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change-me}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_HOST_PORT:-5051}:80"
+    volumes:
+      - dealpilot_pgadmin_data:/var/lib/pgadmin
+      # Pre-registers the DealPilot Postgres connection so it shows up
+      # automatically on first login instead of being added by hand.
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    environment:
+      # Overrides backend/.env's DATABASE_URL (which points at localhost for
+      # running uvicorn on the host) so the containerized backend reaches
+      # Postgres by its compose service name instead.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dealpilot}:${POSTGRES_PASSWORD:-dealpilot}@postgres:5432/${POSTGRES_DB:-dealpilot}
+    ports:
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - dealpilot_frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  dealpilot_postgres_data:
+  dealpilot_pgadmin_data:
+  dealpilot_frontend_node_modules:
