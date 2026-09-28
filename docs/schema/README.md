@@ -163,14 +163,21 @@ later if skipped.
 | `id`            | uuid, PK                    |
 | `meeting_id`    | → `meetings`                |
 | `contact_id`    | → `contacts` (nullable)     |
-| `raw_name`      | `text`                      |
+| `raw_name`      | `text`, **not null**        |
 | `is_internal`   | `bool`                      |
 | `attended`      | `bool`                      |
 
-`contact_id` is nullable **on purpose**. Transcript speakers frequently are not
-in `contacts` yet, and those are precisely the people worth surfacing — a name in
-a transcript that maps to no known contact is the raw signal for
-"missing stakeholder."
+`raw_name` is required; `contact_id` is the optional **resolution** of that name
+to a known person, not the other way round. Two reasons:
+
+- Transcript speakers frequently are not in `contacts` yet, and those are
+  precisely the people worth surfacing — a name that maps to no known contact is
+  the raw signal for "missing stakeholder."
+- Attendance is a historical fact. Deleting a contact sets `contact_id` to NULL
+  via `ON DELETE SET NULL`, and a row whose only identity was that link would be
+  left anonymous. An earlier CHECK requiring one or the other made such contacts
+  **undeletable entirely**. Snapshotting the name lets the row degrade to
+  "unresolved attendee" instead of breaking. Fixed in `0003_attendee_name`.
 
 ### `tasks`
 
