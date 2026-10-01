@@ -47,6 +47,34 @@ services:
       postgres:
         condition: service_healthy
 
+  # Object storage for uploaded documents. A document row in Postgres only
+  # exists once its bytes are here, so the two must come up together.
+  #
+  # chainguard/minio, NOT minio/minio: MinIO archived its community edition
+  # (repo archived Feb 2026) and removed the images from Docker Hub around
+  # Oct 2025. The quay.io mirror that was the usual workaround is now denied
+  # too -- both were verified failing. Chainguard publishes an AGPLv3 build
+  # that is a drop-in: the backend speaks the S3 API, so any S3-compatible
+  # server works if this one ever becomes unavailable (Garage and SeaweedFS
+  # are the usual alternatives).
+  #
+  # The image is distroless -- no shell, no `mc` -- so there is no healthcheck
+  # and no bucket-init sidecar. services/storage.py creates the bucket on
+  # first use instead, which also means a fresh volume needs no manual step.
+  minio:
+    image: chainguard/minio:latest
+    restart: unless-stopped
+    command: server /data --address ":9000"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dealpilot}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me}
+    ports:
+      # Published because presigned preview URLs are opened by the *browser*,
+      # not by the backend -- see MINIO_PUBLIC_ENDPOINT in backend/.env.
+      - "${MINIO_API_PORT:-9000}:9000"
+    volumes:
+      - dealpilot_minio_data:/data
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -57,6 +85,13 @@ services:
       # running uvicorn on the host) so the containerized backend reaches
       # Postgres by its compose service name instead.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dealpilot}:${POSTGRES_PASSWORD:-dealpilot}@postgres:5432/${POSTGRES_DB:-dealpilot}
+      # Inside the compose network the backend reaches MinIO by service name.
+      # MINIO_PUBLIC_ENDPOINT stays as backend/.env sets it -- presigned URLs
+      # are signed for the host the *browser* will use.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-dealpilot}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
+      MINIO_BUCKET: ${MINIO_BUCKET:-dealpilot-documents}
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     volumes:
@@ -64,6 +99,34 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
+
+  # Same image as the backend -- the worker imports the same app package, so a
+  # separate Dockerfile would be a second copy of one dependency set. Phase 10
+  # adds two more poll queries to this one process; there is deliberately no
+  # scheduler and no second worker service.
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "worker"]
+    env_file:
+      - backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dealpilot}:${POSTGRES_PASSWORD:-dealpilot}@postgres:5432/${POSTGRES_DB:-dealpilot}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-dealpilot}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
+      MINIO_BUCKET: ${MINIO_BUCKET:-dealpilot-documents}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Migrations run on backend start, so the worker must not query before
+      # the schema exists.
+      backend:
+        condition: service_started
 
   frontend:
     build: ./frontend
@@ -80,5 +143,6 @@ services:
 
 volumes:
   dealpilot_postgres_data:
+  dealpilot_minio_data:
   dealpilot_pgadmin_data:
   dealpilot_frontend_node_modules:
