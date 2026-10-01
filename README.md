@@ -23,7 +23,7 @@ extracted fact cites its source, and a human decides what becomes real.
 | **Schema** | 20 tables, 9 migrations, head at `0009` |
 | **API** | 48 endpoints under `/api/v1` |
 | **Built** | deals · stakeholders · stage history · tasks · meetings · attendees · documents · risks · recommendations · commitments |
-| **Not built** | chat, extraction agent, Evidence Validator, seeder, tests |
+| **Not built** | chat, extraction agent, Evidence Validator, seeder |
 
 Two screens' worth of AI value already work **with no model calls**: the
 deterministic risk detector, and the deal participants roll-up that surfaces
@@ -143,6 +143,7 @@ cd backend
 | `0007` | drop `activities` — the timeline is derived |
 | `0008` | documents are all-or-nothing |
 | `0009` | link recommendations to risks, record dismissals |
+| `0010` | enable `pg_trgm` for attendee name resolution |
 
 **Two traps, both documented in `docs/schema/TASKS.md`:** a native Postgres enum
 survives `DROP COLUMN`, so any migration dropping one must `DROP TYPE` as well
@@ -176,14 +177,8 @@ Run from `frontend/`:
 
 ## Known gaps
 
-- **No test suite.** Everything was verified by hand against a live database.
-  `models/__init__.py` references `tests/test_model_registry.py`, which does not
-  exist. This is the largest debt in the project.
-- **No worker.** `POST /deals/{id}/analysis` runs the deterministic detector
-  synchronously; `POST .../meetings/{id}/analysis` sets `queued` and nothing
-  consumes it.
-- **Nothing writes `deals.last_activity_at`**, though the `stale_days` filter
-  reads it.
+- **Placeholder AE identity.** `ae_display_name` in settings is how the roster
+  decides which transcript speaker is us; there is no `users` table.
 - **Placeholder thresholds** in `queries.py` (`STALL_THRESHOLD_DAYS`,
   `CLOSE_DATE_WARNING_DAYS`) — they should come from real dwell-time data once a
   seeder exists.

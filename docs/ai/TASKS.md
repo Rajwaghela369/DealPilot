@@ -4,10 +4,22 @@ Scope: **the model layer only.** Design reference: `README.md` in this
 directory. Schema reference: `docs/schema/README.md`. Existing migration head:
 `0009`.
 
-**Status: Phase 0 and Phase 1 complete except the two things that need a Groq
-key** — the live smoke call (0.3) and the live challenger comparison (1.5).
-Task 0.9 was declined, not deferred. Phase 2 is next and needs no key for
-2.1-2.3.
+**Status: Phases 0-6 complete; Phase 7 built, its live shadow run outstanding.**
+**84 tests pass, and the suite is provably offline.** All thirteen pipeline
+stages are implemented — `stage_registry.STAGES` has no `_todo` left — and the
+worker runs the graph.
+
+Migrations: head at `0013`. `0010_pg_trgm`, `0011_meeting_analysis_origin`,
+`0012_detector_provenance`, `0013_open_risk_taxonomy`, all round-tripped.
+
+Open: **7.4's live shadow run** (a sizing bug found while running it, below),
+**7.5's writes** (gated on 7.4), and **1.5's three-way model comparison**.
+Task 0.9 was declined, not deferred.
+
+The payoff from Phase 2 is visible: with `meeting_attendees` populated, the
+deterministic detector now returns three real cited risks on the fixture deal
+(`no_economic_buyer`, `stalled_stage`, `close_date_at_risk`) and correctly
+stays silent on `single_threaded`.
 
 Files added by Phase 0: `app/ai/{client,governor,pipeline}.py`,
 `app/ai/prompts/{__init__,smoke}.py`, `app/services/activity.py`,
@@ -60,7 +72,7 @@ No model calls. Everything here is testable without an API key.
       `ai_enabled: bool = False`, per-stage `max_tokens` and a token ceiling.
       *Done when:* the app starts with `ai_enabled=False` and no key present.
 
-- [ ] **0.3 One LLM client module.** `app/ai/client.py` — the only place a
+- [x] **0.3 One LLM client module.** `app/ai/client.py` — the only place a
       model is named. Builds a configured `ChatGroq` runnable per role, wires
       `.with_structured_output()` with `strict: true`, and captures usage
       (`input_tokens`, `output_tokens`, `latency_ms`). Every task calls through
@@ -71,9 +83,12 @@ No model calls. Everything here is testable without an API key.
       **Built and verified offline** — imports with no provider installed,
       `AIDisabled` when `ai_enabled=False`, `RunBudget` ceiling enforced,
       retry classification correct, and the grep check passes.
-      **Outstanding:** the live call. Set `GROQ_API_KEY`, `AI_ENABLED=true`, and
-      run the `smoke` prompt through `client.structured()`; that is also the
-      first real test of whether `json_schema` works on the account.
+      **Live call verified** — `tests/verify_ai_smoke.py`:
+      `openai/gpt-oss-120b` returned a parsed Pydantic object with a populated
+      usage record (226 in / 57 out, 443 ms, one attempt). `json_schema`
+      structured output works on this account **even without `strict`**, so
+      best-effort mode is adequate in practice — the Pydantic validation is
+      still the only guarantee on this interpreter.
 
 - [x] **0.4 Prompt registry with versions.** `app/ai/prompts/` — one module per
       task, each exporting `PROMPT` and `VERSION`. The version string is what
@@ -201,38 +216,71 @@ everything downstream is unmeasurable without it.
 Unblocks `no_economic_buyer` and `single_threaded`, which today read a table
 nothing populates from transcripts.
 
-- [ ] **2.1 Speaker-aware parse.** `services/ingest.py` — for
+- [x] **2.1 Speaker-aware parse.** `services/ingest.py` — for
       `source_type='meeting_transcript'`, populate
       `document_chunks.metadata` with `{speaker, char_start, char_end}` and
       prefer splitting on speaker turns. Deterministic; no model.
       *Done when:* every chunk of a fixture transcript carries a speaker and
       offsets that resolve verbatim.
+      **Done** — and chunks start on a turn boundary as well as ending on one,
+      which the first attempt got wrong: the overlap pulled each start back
+      mid-turn so every chunk after the first opened unattributed. Prose is
+      untouched (a test pins the old offsets). Re-cutting moved every fixture
+      offset, so `load.py` + `resolve_labels.py` were re-run and the recorded
+      eval run regenerated.
 
-- [ ] **2.2 Roster extraction.** Distinct speaker labels → `meeting_attendees`
+- [x] **2.2 Roster extraction.** Distinct speaker labels → `meeting_attendees`
       rows with `raw_name`, `attended=true`, `is_internal` inferred from the
       label or left false.
       *Done when:* a fixture transcript yields one row per distinct speaker and
       a re-run inserts nothing new.
+      **Done** — 4 / 4 / 5 attendees, matching `manifest.json` exactly, and 13
+      rows after two full runs. Idempotence has to be enforced in the service:
+      `uq_meeting_attendees_meeting_id_contact_id` is partial
+      (`WHERE contact_id IS NOT NULL`) so the database does not stop an
+      unresolved name being inserted twice.
 
-- [ ] **2.3 Entity resolution, deterministic first.** `pg_trgm` similarity of
+- [x] **2.3 Entity resolution, deterministic first.** `pg_trgm` similarity of
       `raw_name` against `contacts`. Link only above a high threshold; leave
       `contact_id` NULL otherwise. **Never guess** — a wrong link silently
       corrupts every attendance-based risk, and an unresolved attendee is the
       missing-stakeholder signal.
       *Done when:* exact and near-exact names link, ambiguous ones stay NULL,
       and the migration enabling `pg_trgm` is in place.
+      **Done** — `0010_pg_trgm` with a `gin_trgm_ops` index on the concatenated
+      name, round-tripped. Observed similarities: exact 1.00, typo
+      ("Priya Ramen") 0.60, bare first name 0.50, unrelated 0.00. Thresholds in
+      settings: link at ≥0.75 *and* ≥0.15 clear of the runner-up, candidate for
+      the tiebreak at ≥0.40, nothing below that reaches a model. On the fixture
+      corpus: Priya and Marcus link, Maya/Tom/Dana stay NULL, **zero model
+      calls**.
 
-- [ ] **2.4 LLM tiebreak on the residue only.** `openai/gpt-oss-20b`, given the
+- [x] **2.4 LLM tiebreak on the residue only.** `openai/gpt-oss-20b`, given the
       unresolved label and the deal's candidate contacts, returns a
       `contact_id` or null. Never invents a contact.
       *Done when:* the ambiguous fixture case resolves, and a name with no
       plausible candidate returns null.
+      **Built, not yet run live.** `app/ai/tiebreak.py` + the
+      `roster_tiebreak@1` prompt. The model answers with a **candidate number,
+      not a contact id** — the dossier's handle pattern: an out-of-range answer
+      is detectable and treated as "no match", where a fabricated uuid would
+      not be. Unit-tested with a stubbed client for the link, the out-of-range
+      and the AI-disabled paths.
+      **Live call verified** — `tests/verify_ai_tiebreak.py` builds the two
+      cases the corpus lacks and cleans up after itself:
+      a transcription slip ("Priya Ramen", similarity 0.60) is deferred and
+      correctly linked to Priya Raman; **two contacts sharing a first name
+      ("Priya" → Priya Shah 0.55, Priya Raman 0.50) is deferred and the model
+      declines to guess, leaving `contact_id` NULL** — which is the behaviour
+      the prompt asks for and the one that matters, since a wrong link
+      corrupts every attendance-based risk invisibly. "Tom Alvarez" never
+      reaches a model at all.
 
 ---
 
 ## Phase 3 — Extraction and Gate 0
 
-- [ ] **3.1 `payload` schemas per `fact_type`.** `app/ai/schemas.py` — one
+- [x] **3.1 `payload` schemas per `fact_type`.** `app/ai/schemas.py` — one
       Pydantic model per value of `FactType` (budget → `{amount, currency,
       basis}`, deadline → `{date, what}`, ...). These are both the structured
       output schema and what makes the literal rule checkable: you know which
@@ -241,8 +289,18 @@ nothing populates from transcripts.
       unions rather than omitted keys (`README.md` §7).
       *Done when:* each validates a hand-written example, rejects a bad one, and
       its JSON Schema is accepted by Groq with `strict: true`.
+      **Done** — `app/ai/schemas.py`, in two layers. The **wire** schema is
+      flat, because strict mode forbids the obvious design twice over: a
+      free-form `Dict[str, str]` renders as `additionalProperties: {schema}`
+      where strict needs `false`, and a Pydantic field with `= None` is omitted
+      from `required`. So all nine payload fields are `Optional[...]` with **no
+      default** — present-but-null, never missing. The **per-type** models are
+      the semantic contract, checked in Python after parsing, and are what make
+      a `budget` fact promotable later. `strict_schema_problems()` asserts
+      conformance locally, since this interpreter's client cannot send `strict`
+      at all.
 
-- [ ] **3.2 The extractor.** `app/ai/extract.py` — one structured
+- [x] **3.2 The extractor.** `app/ai/extract.py` — one structured
       `openai/gpt-oss-120b` call per chunk window, run in parallel. Returns facts
       **with their spans in the same output** — `chunk_id` plus the verbatim
       `snippet`. The model never returns character offsets: Python locates the
@@ -251,28 +309,92 @@ nothing populates from transcripts.
       tools, no retrieval.
       *Done when:* a fixture transcript yields facts whose snippets are literal
       substrings of the cited chunks, and a paraphrased snippet is rejected.
+      **Done** — `app/ai/extract.py` + the `extract@1` prompt. Windows are
+      even-sized rather than greedy (a greedy split leaves a one-chunk
+      remainder, the worst possible input for a task that needs surrounding
+      context) and non-overlapping, since the chunks inside them already
+      overlap. `render_window` trims that overlap using the stored offsets, so
+      the model is not shown the same exchange twice and invited to extract it
+      twice.
+      `locate()` tries exact, then **case-insensitive**, and stores the
+      *document's* characters either way — a model quoting mid-sentence writes
+      "we'd" where the transcript has "We'd", and that is the same quote.
+      Nothing looser: a fuzzy match would store a span that then fails Gate 0
+      later, further from the cause.
 
-- [ ] **3.3 Gate 0.** `services/claims.py` — for each `claim_evidence` link:
+- [x] **3.3 Gate 0.** `services/claims.py` — for each `claim_evidence` link:
       document spans matched verbatim at their offsets; `record_ref` resolved to
       a live row whose field still equals `snippet`; and the **literal rule** —
       any date or monetary amount in the claim text must appear in a cited span
       or resolved value. Writes `verification_status`. Runs *inside the insert*.
       *Done when:* a deliberately corrupted snippet yields `span_missing`, a
       mutated record yields `value_drifted`, and a fabricated date fails.
+      **Done** — `app/services/gate0.py`, in `services/` rather than `app/ai/`
+      because it touches no provider and must check a human-entered citation by
+      the same code. `record_ref` resolution goes through an **allowlist of
+      table and column names**: it is jsonb a model wrote, and resolving an
+      arbitrary table from it would be an injection point into our own schema.
+      The literal rule extracts dates and money **only in figures** —
+      "a hundred and fifty thousand" is deliberately not matched, because the
+      rule exists to catch a model *converting* speech into a precise-looking
+      literal that was never said.
 
-- [ ] **3.4 Zero-evidence rejection.** A claim with no surviving link is not
+- [x] **3.4 Zero-evidence rejection.** A claim with no surviving link is not
       written. Enforced in the service layer, not by the caller.
       *Done when:* inserting a claim with no evidence raises, and nothing lands.
+      **Done** — `app/services/facts.py` is the only writer of model-produced
+      facts and runs Gate 0 *inside* the insert. A caller may pass checks it
+      already computed (the graph does, so the gate is not run twice against
+      the database) but they are honoured, not trusted: a check that did not
+      pass means no write, whoever computed it. Rejections are returned and
+      logged, never persisted — a row for something that failed verification is
+      a row somebody eventually renders.
+      `attach_evidence` also had to grow `char_start`/`char_end`/`speaker`/
+      `occurred_at`: it could not record a document span at all, and a span
+      with no offsets can never verify.
 
-- [ ] **3.5 Wire into the pipeline** as stages 2–4, writing
+- [x] **3.5 Wire into the pipeline** as stages 2–4, writing
       `extracted_facts` (`status='pending'`), `evidence`, `claim_evidence`.
       *Done when:* one queued meeting produces pending facts visible through the
       existing API, and a re-run with the same document is a no-op.
+      **Done** — stages 2/3/4 in `app/ai/stages.py`, and again as graph nodes
+      in 3.7. Re-analysis is idempotent at the **document** level, not the fact
+      level: a fact has no natural key, so "this document has already been
+      extracted" is the only safe statement.
 
-- [ ] **3.6 Measure.** Run 1.3 against the three fixtures; record the baseline.
+- [x] **3.6 Measure.** Run 1.3 against the three fixtures; record the baseline.
       *Done when:* Gate 0 pass rate and fact precision/recall are written down.
+      **Baseline recorded** — `openai/gpt-oss-120b`, `extract@1`, whole corpus,
+      27,877 tokens, 0 retries. Replayable from
+      `tests/eval/recorded/extract-baseline-gpt-oss-120b.json`.
 
-- [ ] **3.7 Convert the pipeline to a LangGraph `StateGraph`.** Design:
+      | | |
+      |---|---|
+      | reported / located / **unlocatable** | 52 / 52 / **0** |
+      | payload narrowing errors | 5 |
+      | recall (type + span) | **0.65** — 17 of 26 labels |
+      | precision | 0.33 — **not interpretable, see below** |
+
+      Recall by type: `budget 3/3 · competitor 1/1 · requirement 4/5 ·
+      decision_criteria 3/5 · stakeholder 2/3 · deadline 2/3 ·
+      **commitment 1/3** · **objection 1/3**`.
+
+      **Zero unlocatable snippets is the headline.** Every quote the model
+      returned was found verbatim in a chunk, so the "copy, don't describe"
+      instruction holds and Gate 0 has something real to check in every case.
+
+      **Precision 0.33 is mostly a measurement artifact.** Of the 35
+      unmatched predictions: **10 cite a labelled span under a different
+      `fact_type`** (taxonomy disagreement, not fabrication) and 25 fall
+      outside any labelled span — and inspection shows most of those are real
+      facts the labels simply do not contain ("the audit is scheduled for Q4",
+      "finance will need to sign off"). The labels were written as *the planted
+      cases plus notable facts*, never as an exhaustive enumeration, so
+      precision cannot be computed against them. **Recall is the valid number
+      here; precision needs either exhaustive labels or an adjudicated
+      sample.**
+
+- [x] **3.7 Convert the pipeline to a LangGraph `StateGraph`.** Design:
       `README.md` §4, *The LangGraph graph*. The payoff is stage 2's fan-out,
       which is why the conversion waits until there are real facts to merge.
       Four parts:
@@ -290,8 +412,23 @@ nothing populates from transcripts.
       *Done when:* the graph runs the same 13 stages with identical outcomes to
       the sequential runner, parallel windows merge into one fact list, and
       `get_graph().draw_mermaid()` reproduces the diagram in §4.
+      **Done** — `app/ai/graph.py`. `facts: Annotated[List, operator.add]` is
+      the line that justifies the graph: without it two `extract_window` nodes
+      writing one key in a single step is an error. The `AsyncSession` and the
+      `Meeting` travel as `AnalysisContext` rather than in the state, which is
+      merged and may be serialized. `retry_policy` is on `extract_window`
+      alone — it writes nothing before returning, so it is the only node a
+      retry cannot duplicate. `draw_mermaid()` reproduces §4's shape including
+      the fan-out and the `drop_unevidenced → END` branch. Compiled with no
+      checkpointer.
+      **The sequential runner is gone** (see Found during implementation). The
+      stage *declaration* it carried — the thirteen names and the
+      critical/degradable flags — moved to `app/ai/stage_registry.py`, which a
+      test now asserts the graph's nodes against in both directions. `_StateShim`
+      is gone with it: stage functions return dicts, so graph nodes are three
+      lines each.
 
-- [ ] **3.8 Usage accounting through a callback.** `_usage(raw)` sees only the
+- [x] **3.8 Usage accounting through a callback.** `_usage(raw)` sees only the
       response `client.py` holds, so a model call made inside a graph node or an
       agent loop is invisible to `AIRun` and uncharged to `RunBudget` — which
       under-counts exactly where a runaway is likeliest. Wrap runs in
@@ -300,8 +437,13 @@ nothing populates from transcripts.
       *Done when:* a run whose model calls bypass `client.structured()` still
       charges `RunBudget`, and a deliberately uncapped loop trips
       `TokenCeilingExceeded`.
+      **Done** — `client.track_usage()` wraps a run in
+      `get_usage_metadata_callback()`, which registers a context-scoped handler
+      and so sees anything LangChain runs inside the block without that code
+      knowing about it. Verified live: the callback's total matched the count
+      read off our own response exactly (225 tokens, one model).
 
-- [ ] **3.9 Expose the governor as a `BaseRateLimiter`.** Needed as soon as a
+- [x] **3.9 Expose the governor as a `BaseRateLimiter`.** Needed as soon as a
       graph node invokes a runnable directly, since `ChatGroq(rate_limiter=...)`
       is what reaches calls `client.structured()` never sees. **Only the
       request/concurrency half can move:** `BaseRateLimiter.acquire(*,
@@ -310,53 +452,62 @@ nothing populates from transcripts.
       *Done when:* a model call made inside a node is subject to the RPM and
       concurrency ceiling, and the TPM bucket still sees it through
       `client.py`.
+      **Done, with one honest limitation.** `client.GovernorRateLimiter`
+      implements `BaseRateLimiter` over the governor's request bucket and is
+      attached by `client.agent_model()`. It can carry **requests only**:
+      `acquire(*, blocking)` takes no argument describing the request, so
+      tokens-per-minute is not expressible through the interface — and
+      concurrency is not either, because a limiter gates entry and is never
+      told the call finished, so it has nothing to release. Both stay in
+      `client.structured()`. Never attached to the `structured` path, which
+      takes from the same bucket itself and would be charged twice.
 
 ---
 
 ## Phase 4 — Gate 1, the Evidence Validator
 
-- [ ] **4.1 The validator.** `app/ai/validate.py` — one `openai/gpt-oss-120b` call
+- [x] **4.1 The validator.** `app/ai/validate.py` — one `openai/gpt-oss-120b` call
       per claim, given the claim text and **only** its cited spans. No tools,
       no transcript, no deal record. Returns
       `supported|partial|contradicted|unsupported` plus a rationale.
       *Done when:* a hand-built supported case, a partial case and a
       contradicted case each get the right verdict.
 
-- [ ] **4.2 Persist.** Append a `claim_validations` row per run with `verdict`,
+- [x] **4.2 Persist.** Append a `claim_validations` row per run with `verdict`,
       `method='llm'`, `rationale`, `model`, `validator_version` from 0.4.
       *Done when:* two runs leave two rows, never an update.
 
-- [ ] **4.3 Quarantine policy.** `contradicted` and `unsupported` never render;
+- [x] **4.3 Quarantine policy.** `contradicted` and `unsupported` never render;
       `partial` renders with a caution badge. Enforced in the read path so no
       future route can forget it.
       *Done when:* a contradicted fact is absent from the API response.
 
-- [ ] **4.4 Log the pairs.** `confidence × verdict` into the metrics from 1.3.
+- [x] **4.4 Log the pairs.** `confidence × verdict` into the metrics from 1.3.
       *Done when:* high-confidence contradicted cases are countable.
 
 ---
 
 ## Phase 5 — Meeting synthesis
 
-- [ ] **5.1 Migration `0010_meeting_analysis_origin`.** `meetings` +
+- [x] **5.1 Migration `0011_meeting_analysis_origin`.** `meetings` +
       `analysis_origin`, `confidence`, `model`; `deal_contacts` + `origin`.
       Note the two schema traps in `docs/schema/TASKS.md` — a native enum
       survives `DROP COLUMN`, and `create_check_constraint` runs names through
       the naming convention.
       *Done when:* `alembic upgrade head` then `downgrade -1` both succeed.
 
-- [ ] **5.2 Summary from facts, not the transcript.** `app/ai/synthesize.py` —
+- [x] **5.2 Summary from facts, not the transcript.** `app/ai/synthesize.py` —
       `openai/gpt-oss-120b` over the surviving fact set plus the attendee roster.
       ~1K input tokens, and every sentence traces to a fact that traces to a
       span.
       *Done when:* the summary asserts nothing absent from the fact set.
 
-- [ ] **5.3 Sentiment from the transcript.** `openai/gpt-oss-20b`,
+- [x] **5.3 Sentiment from the transcript.** `openai/gpt-oss-20b`,
       returning a `Sentiment` value plus two or three illustrative quotes
       attached with `relevance` — explicitly outside the Gate 1 contract.
       *Done when:* `meetings.sentiment` is set and the quotes resolve verbatim.
 
-- [ ] **5.4 Wire as stages 9–11** and set `analyzed_at`,
+- [x] **5.4 Wire as stages 9–11** and set `analyzed_at`,
       `analysis_status='complete'`. A failure here leaves the facts intact and
       logs the stage error.
       *Done when:* the Meeting Analyzer projection returns a real `summary` and
@@ -366,20 +517,20 @@ nothing populates from transcripts.
 
 ## Phase 6 — Reconciliation and supersession
 
-- [ ] **6.1 Commitment reconciliation.** `app/ai/reconcile.py` —
+- [x] **6.1 Commitment reconciliation.** `app/ai/reconcile.py` —
       `openai/gpt-oss-120b` matches new commitment-facts against that deal's open
       `commitments`. Output is a **proposed** status change, written as a
       `recommendation`, never a direct write to `commitments.status`.
       *Done when:* the fixture's fulfilled commitment yields a proposal and an
       unrelated fact yields none.
 
-- [ ] **6.2 Supersession.** Compare new facts against live accepted facts of the
+- [x] **6.2 Supersession.** Compare new facts against live accepted facts of the
       same `fact_type` for the deal. On contradiction: mark the old
       `superseded`, link the new evidence, **keep both**.
       *Done when:* the fixture's contradicting fact supersedes its predecessor
       and neither row is deleted.
 
-- [ ] **6.3 Staleness (SQL).** Flag claims whose newest `evidence.occurred_at`
+- [x] **6.3 Staleness (SQL).** Flag claims whose newest `evidence.occurred_at`
       predates `deals.last_activity_at`; write `stale` to
       `claim_evidence.verification_status`.
       *Done when:* an old claim on a recently-active deal reads `stale`.
@@ -391,28 +542,45 @@ nothing populates from transcripts.
 Shadow-run before it writes anything. Step 7.4 is the dress rehearsal against
 free labels and should not be skipped.
 
-- [ ] **7.1 Migration `0011_detector_provenance`.** `risks`, `recommendations` +
+- [x] **7.1 Migration `0012_detector_provenance`.** `risks`, `recommendations` +
       `model`, `detector_version`. Backfill existing rows with
       `detector_version='deterministic-1'` so there is a labelled "before".
       *Done when:* upgrade/downgrade both succeed and existing rows are tagged.
 
-- [ ] **7.2 Dossier builder.** `app/ai/dossier.py` — pure Python, no model.
+- [x] **7.2 Dossier builder.** `app/ai/dossier.py` — pure Python, no model.
       Deal fields, stage history, stakeholder map with attendance counts, open
       commitments, accepted facts, meeting cadence, prior dismissals, and the
       currently-open risks. Every entry is `(handle, source_kind, ref, text)`.
       *Done when:* a unit test asserts every handle resolves to a real record or
       fact, with no API call.
 
-- [ ] **7.3 Handle validation.** Any `evidence_ref` not in `dossier.keys()` is
+- [x] **7.3 Handle validation.** Any `evidence_ref` not in `dossier.keys()` is
       rejected before any write. This is what makes a fabricated citation
       structurally impossible.
       *Done when:* a doctored model output with an unknown ref is refused.
 
-- [ ] **7.4 Shadow mode on the four deterministic types.** Run the detector
+- [x] **7.4 Shadow mode on the four deterministic types.** Run the detector
       call, write **nothing**, and compare against `detect.py`: recall on the
       four overlapping types, and risk-key Jaccard across two runs on an
       unchanged deal.
       *Done when:* recall and stability are recorded and meet your bar.
+      **Run, and it did its job twice over.** Against the three risks the SQL
+      rules confirm on the fixture deal:
+
+      | | |
+      |---|---|
+      | recall (proposed + affirmed) | **1.00** — all three |
+      | added beyond the rules | `budget_unconfirmed`, `missed_commitment`, `security_review_pending` — three of the six semantic types SQL cannot express |
+      | **stability (Jaccard, two runs, unchanged deal)** | **0.67** |
+      | tokens, two runs | 9,380 |
+
+      Stability 0.67 is the number to watch: `budget_unconfirmed` was proposed
+      in run 1 and not in run 2. `temperature=0` does not make a reasoning
+      model deterministic. **The write path absorbs it** -- a proposal flickers
+      harmlessly because the upsert keeps an open risk open and absence never
+      resolves anything (7.9); flicker in a *verdict* would matter far more,
+      and all three verdicts agreed across both runs. Worth re-measuring over
+      more runs before trusting the figure.
 
 - [ ] **7.5 Turn on writes.** Stage D reconciliation in Python — upsert by
       `(deal_id, risk_type, risk_key)`, bump `last_seen_at`, never insert a
@@ -422,13 +590,13 @@ free labels and should not be skipped.
       *Done when:* two consecutive runs on one deal leave one row per risk, and
       the six semantic types appear with surviving citations.
 
-- [ ] **7.6 Severity policy.** Compute the band in Python for `stalled_stage`,
+- [x] **7.6 Severity policy.** Compute the band in Python for `stalled_stage`,
       `close_date_at_risk` and `missed_commitment` and clamp the model's
       proposal to it. Hysteresis: raising is immediate, lowering needs new
       evidence or N days.
       *Done when:* two runs on an unchanged deal never change a severity.
 
-- [ ] **7.7 Migration `0012_open_risk_taxonomy`.** `risks` + `risk_key text not
+- [x] **7.7 Migration `0013_open_risk_taxonomy`.** `risks` + `risk_key text not
       null default ''`; `RiskType.OTHER` (a CHECK swap); drop and recreate the
       partial unique index as `(deal_id, risk_type, risk_key) WHERE
       status='open'`. Dropping a CHECK by name needs raw SQL — see the trap in
@@ -436,19 +604,19 @@ free labels and should not be skipped.
       *Done when:* the ten known types behave exactly as before, and two
       distinct `other` keys coexist on one deal.
 
-- [ ] **7.8 Key canonicalization.** Lowercase and strip a proposed `risk_key`,
+- [x] **7.8 Key canonicalization.** Lowercase and strip a proposed `risk_key`,
       then trigram-match it against that deal's open keys and reuse on a hit.
       *Done when:* `champion_going_quiet` and `champion_disengaged` collapse to
       one row.
 
-- [ ] **7.9 Resolution by verdict.** Feed open risks into the dossier; require a
+- [x] **7.9 Resolution by verdict.** Feed open risks into the dossier; require a
       per-risk `still_present|resolved|unclear`. Resolve only on a
       Gate-0-surviving `resolved` verdict, and only after two consecutive ones
       or a human confirmation. Deterministic types keep their SQL auto-resolve.
       *Done when:* a risk whose cause is gone resolves with an attached
       evidence row, and one omitted from the output is left untouched.
 
-- [ ] **7.10 Dismissal feedback policy.** Enforce the four rules from
+- [x] **7.10 Dismissal feedback policy.** Enforce the four rules from
       `README.md` §5 in Python, not in the prompt.
       *Done when:* a recommendation dismissed as `already_handled` is not
       re-proposed inside the cooldown, and one dismissed as `bad_timing` is.
@@ -504,7 +672,7 @@ free labels and should not be skipped.
 Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
 **10.1–10.4 need only Phase 3; 10.5 needs Phase 7.**
 
-- [ ] **10.1 Migration `0013_analysis_triggers`.** `deals` +
+- [ ] **10.1 Migration `0014_analysis_triggers`.** `deals` +
       `analysis_dirty_first_at`, `analysis_dirty_last_at`,
       `analysis_dirty_reason`, `analysis_swept_at`. Partial index on
       `(analysis_dirty_last_at) WHERE analysis_dirty_first_at IS NOT NULL`, and
@@ -578,6 +746,224 @@ Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
 
 ## Found during implementation
 
+- **The first shadow run reported recall 0.0, and the metric was the thing that
+  was broken.** The model does not re-propose a risk that is already open -- it
+  returns a `still_present` verdict for it, which is exactly what the prompt
+  asks for. Scoring only `proposed` against the SQL rules therefore counted
+  zero overlap on a run where every rule-detected risk had been affirmed.
+  Corrected to `proposed + affirmed`, which gives 1.00, and pinned with a test.
+  The lesson is the one the shadow run exists to teach: it measures the
+  measurement as well as the detector, and the detector was right.
+
+- **`reasoning_effort="high"` makes detection fail outright.** Measured with a
+  three-way probe: at `high` with any cap the model spends its output budget
+  reasoning and never emits the JSON (`400 json_validate_failed`, **empty**
+  `failed_generation`); at `low` it found two of the three risks the SQL rules
+  confirm; at `medium` it found all three in ~2.6K output tokens. Set to
+  `medium`. The lesson generalises -- on a reasoning model the effort setting
+  and the output cap are *one* budget, and the failure when they collide looks
+  like a schema error.
+
+- **Every per-stage `max_tokens` was sized against the wrong TPM figure, and I
+  did not revise them when I corrected it.** The caps were set when
+  `groq_tokens_per_minute` said 250,000. After correcting that to the real
+  8,000, `ai_max_tokens_detect` and `ai_max_tokens_extract` were still 8192 —
+  **102% of the entire per-minute budget**, so a single request could never fit
+  in a fresh minute. Extraction survived it because its actual output (3.1-4.3K)
+  stayed under the cap; detection did not, and failed as
+  `400 json_validate_failed` with an **empty** `failed_generation` — the shape
+  that means nothing was produced, not that the schema was wrong. Resized
+  against observed output, with the constraint written down: a per-request cap
+  must leave room for its own input inside the TPM ceiling.
+
+- **Migration 0013 broke the deterministic detector, silently until run.**
+  `detect.run` upserts with
+  `on_conflict_do_update(index_elements=[deal_id, risk_type], index_where=...)`,
+  inferring `uq_risks_deal_id_risk_type_open` — which 0013 drops and replaces
+  with `uq_risks_open_key` on `(deal_id, risk_type, risk_key)`. Index inference
+  then fails outright: there is no longer a unique index on the pair alone.
+  Caught by running the four SQL rules after migrating, not by any test. Fixed
+  by adding `risk_key` to both the inserted values and `index_elements`.
+
+- **Reconciliation has nowhere to put its proposal.** The design said a
+  proposed commitment status change lands as a `recommendation`, and it does
+  not fit: every `ActionType` names an action to *take* — `send_document`,
+  `engage_stakeholder` — while "this commitment now looks satisfied" is a
+  proposed **data correction**. Filing it under the nearest action would
+  corrupt the action-type and `dismissal_reason` distributions, two of the few
+  signals here that are not self-reported. Stage 7 therefore returns and logs
+  the proposals and writes nothing; closing a promise nobody kept is the error
+  that matters. Needs an `ActionType` value (a one-line CHECK swap, since the
+  set is `text + CHECK` for exactly this) or a surface of its own.
+
+- **Gate 1 is stricter than the person writing its test.** The first
+  "supported" case in `verify_ai_gate1.py` claimed *"auditors require twelve
+  months of log retention"* against the quote *"Our auditors want twelve
+  months."* — and the validator returned `partial`, because the quote says
+  nothing about log retention. It was right and the expectation was wrong. That
+  is the behaviour the gate exists for, measured.
+
+- **`anything_survived` routed to `END`, which skipped `finalize`.** A meeting
+  whose facts all failed Gate 0 would never have `analysis_status` set, so the
+  worker would find it `queued` and re-run it on every poll, forever. It now
+  routes to `finalize`. The worker keeps a floor underneath, because
+  `finalize` is a *degradable* stage: if it raises, `guarded` swallows it and
+  nothing would set the status at all.
+
+- **The first graph conversion silently dropped the degradation rule, and my
+  own note claimed otherwise.** The sequential runner caught a stage failure
+  and, for a degradable stage, recorded it and carried on — "a failed summary
+  must not discard the facts that already landed". A raw LangGraph node has no
+  such notion: anything it raises propagates out of `ainvoke` and rolls back
+  the transaction, twenty verified facts included. Task 3.7's note said
+  "identical outcomes to the sequential runner", which was true of the happy
+  path I tested and false of failure behaviour — I should not have written it
+  that broadly.
+  `graph.guarded()` restores it by consulting `stage_registry`. It cost nothing
+  while stages 5-12 were no-ops that could not fail, which is exactly why it
+  survived; Gate 1 is stage 5 and the first thing that genuinely can.
+
+- **Keeping both implementations was not defensible.** The plan was to retain
+  the sequential runner as a test oracle. That only works if the two paths
+  *share* stage logic and differ in orchestration — and they did not: all five
+  implemented stages existed as two independent bodies, with two separate
+  `gate0.check_claim` loops. A fix to one would not reach the other, and Phase
+  4's Gate 1 would have been written twice. Removed, leaving one copy of each
+  stage in `stages.py` and the wiring in `graph.py`.
+
+- **`graph.NODES` exists so failure is injectable.** Two rewritten tests passed
+  while asserting nothing, for two different reasons: the test meeting has no
+  transcript, so `fan_out` routes past `extract_window` entirely, and the eight
+  late stages are closures rather than module attributes, so patching
+  `graph.<name>` found nothing to replace. A node registry gives one patchable
+  seam; `monkeypatch.setitem` keeps it from leaking between tests.
+
+- **`extract@2` traded objection recall for everything else.** The precedence
+  list fixed what it was aimed at and broke one thing:
+
+  | | `extract@1` | `extract@2` |
+  |---|---|---|
+  | recall · precision · f1 | 0.65 · 0.33 · 0.44 | **0.73 · 0.43 · 0.54** |
+  | facts reported | 52 | 44 (less over-generation) |
+  | payload errors | 5 | **1** |
+  | commitment recall | 1/3 | **3/3** |
+  | decision_criteria | 3/5 | **4/5** |
+  | **objection recall** | 1/3 | **0/3** ← regression |
+
+  "A condition is decision_criteria, not an objection" pushed too hard: every
+  objection now lands elsewhere. One of the three labels is my own fault (`n3`
+  labels *"My team has signed off"* as an objection, which is a resolution, not
+  one), so the real figure is nearer 0/2 — still bad, and `objection` feeds
+  `unresolved_objection`. `extract@3` should strengthen branch 5 rather than
+  weaken branch 2. Kept @2 because the net is clearly better and the
+  regression is legible.
+
+- **Self-reported `confidence` is worthless from this model.** All 20 written
+  facts came back at exactly `1.00`, across six fact types, including the ones
+  Gate 0 would have rejected had they been paraphrased. This is the
+  poorly-calibrated signal `docs/schema/README.md` section 5 warns about,
+  measured: it validates never gating on confidence, and it means the
+  `confidence × verdict` matrix will be degenerate until Gate 1 supplies the
+  other axis. Consider dropping `confidence` from the wire schema entirely —
+  it costs output tokens and carries no information.
+
+- **Throttling is visible in the latency, not just the logs.** With the TPM
+  ceiling correct, the second extraction window of a transcript waited 77
+  seconds for bucket refill (9.5s → 77s for a comparable call). Working as
+  designed, but it makes a full-corpus eval run a multi-minute operation on the
+  free tier — worth knowing before treating the eval loop as interactive.
+
+- **The configured TPM was wrong by 31x, and that silently disabled the
+  governor.** The published table quotes the **Developer** plan at 250K TPM;
+  this account is on the free `on_demand` tier, where `openai/gpt-oss-120b` is
+  **8,000 TPM**. Set 31x too high the bucket never throttled, and the first
+  extraction run died with `429 ... Limit 8000, Used 7835` part-way through the
+  second transcript. The mechanism was fine — the number was wrong, which is
+  the more dangerous failure because everything looks healthy until it isn't.
+  Now 8,000 TPM / 30 RPM / concurrency 2, and the re-run completed with **zero
+  retries**. The real limit is on every response as
+  `x-ratelimit-limit-tokens`; reading it from there would delete this setting
+  and is the obvious next improvement.
+
+- **A flat backoff retried into the same exhausted window.** Groq's 429 says
+  exactly when it reopens ("Please try again in 13.3575s") and the retry slept
+  one second, burning the attempt. `_retry_after()` now prefers the
+  `retry-after` header, falls back to parsing the message, and caps at 60s —
+  the header and the message are both needed because which one exists depends
+  on the SDK version.
+
+- **The fact taxonomy genuinely overlaps, and it costs recall.** Ten
+  predictions cite a *labelled span* under a *different* `fact_type`. The
+  confusions are systematic, not random: `objection`/`requirement` →
+  `decision_criteria` (4), `deadline` ↔ `commitment` (4). "We're not signing
+  anything until my team has run a load test" is defensibly a requirement, an
+  objection and a decision criterion, and a commitment with a date in it is
+  defensibly one fact or two.
+  This is not only a scoring problem — `decision_criteria` and `objection`
+  feed **different** downstream rules, so a statement filed under the wrong one
+  reaches the wrong detector. Three ways out, and it is a product call:
+  (a) give the prompt explicit precedence rules ("a condition of signing is
+  `decision_criteria`, even when phrased as a refusal");
+  (b) collapse the overlapping types in the enum;
+  (c) let a statement carry more than one `fact_type`.
+  Recorded rather than chosen.
+
+- **Fixture labels are not exhaustive, so precision is not measurable.** They
+  were written as the planted cases plus notable facts. The extractor found 52
+  facts against 26 labels and most of the excess is real — "the audit is
+  scheduled for Q4", "finance will need to sign off". Either label the corpus
+  exhaustively, or report precision only against an adjudicated sample.
+  Recall is unaffected and remains the number to hill-climb on.
+
+- **Commitment recall is 1/3, and commitments are load-bearing.** They feed
+  `missed_commitment` and the Phase 6 reconciliation. The model tends to split
+  "Maya will send the SOC 2 by the seventh of August" into a `commitment`
+  without the date and a `deadline` with it — arguably more granular than the
+  label, but it means neither row alone can become a `commitments` record with
+  a `due_date`. Worth fixing in the prompt before Phase 6 depends on it.
+
+- **The test suite must be *forced* offline, not assumed to be.** One test
+  asserted the tiebreak was a no-op "when AI is disabled" and passed for the
+  wrong reason: it was reading `AI_ENABLED` from `backend/.env`. The moment a
+  key was configured and the flag flipped, that test started making a real
+  paid API call during `pytest`. An autouse `_offline` fixture in
+  `conftest.py` now sets `settings.ai_enabled = False` for every test, so the
+  suite's behaviour cannot depend on the developer's environment and no test
+  can spend money. Verified by running the suite with `AI_ENABLED=true` in the
+  environment: 51 pass either way. Tests that need a model stub
+  `client.structured` directly, which never reaches `chat_model` and so is
+  unaffected; the live checks live in `verify_ai_*.py` and are run by hand.
+
+- **`single_threaded` counts only *resolved* external attendees**
+  (`contact_id IS NOT NULL`, `detect.py`), and it fires at **exactly one**. So
+  the roster's reluctance to link and this filter compound: a deal with one
+  known contact plus several unresolved speakers reads as single-threaded even
+  though four people are in the room. On the fixture corpus Tom Alvarez attends
+  all three meetings and contributes nothing to breadth. Before Phase 2 the
+  rule was *inert* rather than wrong — the table was empty, so `len(people)`
+  was 0 and it never fired. Now it has real input, and the question is whether
+  breadth should count distinct `raw_name` for externals instead of distinct
+  `contact_id`. A product call, not a bug fix, so it is recorded rather than
+  changed.
+
+- **Migrations renumbered.** Phase 2 needed `pg_trgm` before any of the planned
+  revisions, so `0010` is `pg_trgm` and the planned ones shifted up one:
+  `0011_meeting_analysis_origin`, `0012_detector_provenance`,
+  `0013_open_risk_taxonomy`, `0014_analysis_triggers`.
+
+- **`PipelineState` moved to `app/ai/state.py`.** `pipeline.py` declares the
+  graph and so must name the stage functions, while `stages.py` needs the state
+  type — a cycle. The first attempt deferred the import inside a closure, which
+  silently failed (`name 'stages' is not defined`, surfaced as a stage-0 error
+  on every meeting). Extracting the type is the fix; the lazy indirection is
+  gone.
+
+- **Recorded eval runs are coupled to chunking.** The example recording's spans
+  are chunk coordinates, so re-cutting the fixtures invalidated three metric
+  tests. `tests/eval/recorded/regenerate.py` rebuilds it from the current
+  labels, preserving the designed story. In production this cannot happen:
+  chunks are immutable and re-ingest is delete-and-re-upload.
+
 - **Pydantic reserves the `model_` prefix.** `model_primary` and friends emit a
   protected-namespace warning on a class that also declares `model_config`, so
   the settings are `groq_model_primary` / `_cheap` / `_challenger`.
@@ -585,7 +971,7 @@ Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
 - **`meetings` has no error column.** A critical stage failure sets
   `analysis_status='failed'` and the reason survives only in the worker log, so
   the Analyzer screen can say *that* it failed but not *why*. Add
-  `analysis_error text` to migration `0010_meeting_analysis_origin` (task 5.1).
+  `analysis_error text` to migration `0011_meeting_analysis_origin` (task 5.1).
 
 - **The pipeline is a sequential runner, not a `StateGraph`.** All thirteen
   stages are declared with the critical/degradable split, but a graph whose

@@ -256,6 +256,17 @@ model roles, kept separate in code so one failing stage does not fail the run.
 12  re-run risk detection, now reading facts as well as records
 ```
 
+**Transcripts are chunked on speaker turns, not on paragraphs.** A chunk both
+ends *and* starts on a turn boundary — ending there alone is half the job,
+because `chunk_overlap_chars` then pulls the next chunk's start into the middle
+of a turn and it opens with an unattributed fragment. So for a transcript the
+overlap means "re-include the last whole turn", slightly more than the
+configured characters, and **every chunk opens with a speaker label**. Non
+speaker-labelled documents fall through to the paragraph rule unchanged.
+`chunk_metadata` carries `speakers` for the whole chunk and `speaker` only when
+the chunk covers exactly one turn — for a chunk spanning four turns a single
+name would be a lie a citation would repeat.
+
 **The model never returns character offsets.** It returns the verbatim quote;
 Python locates it in the chunk with a substring search and computes
 `char_start`/`char_end`. If the search fails, the claim dies at Gate 0. Asking
@@ -423,7 +434,7 @@ for each proposed risk:
 
 Constraining `risk_type` to the existing enum needs no migration and already
 buys the six semantic types SQL cannot do. For genuinely novel risks,
-`0012_open_risk_taxonomy` adds `risk_key` and `RiskType.OTHER`, and re-keys the
+`0013_open_risk_taxonomy` adds `risk_key` and `RiskType.OTHER`, and re-keys the
 index to `(deal_id, risk_type, risk_key) WHERE status='open'`. For the ten known
 types `risk_key` stays `''` and behaviour is identical to today.
 
@@ -790,10 +801,11 @@ brokenness regardless of precision.
 
 | Revision | Contents | Why |
 |---|---|---|
-| `0010_meeting_analysis_origin` | `meetings` + `analysis_origin`, `confidence`, `model`; `deal_contacts` + `origin` | `MeetingAnalysis` already promises `summary`/`sentiment` and nothing can write them attributably (README "Known gaps") |
-| `0011_detector_provenance` | `risks`, `recommendations` + `model`, `detector_version` | same argument as `validator_version`: a prompt change makes historical rows a different population |
-| `0012_open_risk_taxonomy` | `risks` + `risk_key`; `RiskType.OTHER`; re-key the partial unique index | model-discovered risks that still have an identity |
-| `0013_analysis_triggers` | `deals` + `analysis_dirty_first_at`, `analysis_dirty_last_at`, `analysis_dirty_reason`, `analysis_swept_at` | event-driven invalidation and the nightly sweep, §3 |
+| `0010_pg_trgm` ✅ | `CREATE EXTENSION pg_trgm`; trigram index on the contacts full name | fuzzy speaker-label resolution (§4, stage 1). Shipped with Phase 2 |
+| `0011_meeting_analysis_origin` | `meetings` + `analysis_origin`, `confidence`, `model`; `deal_contacts` + `origin` | `MeetingAnalysis` already promises `summary`/`sentiment` and nothing can write them attributably (README "Known gaps") |
+| `0012_detector_provenance` | `risks`, `recommendations` + `model`, `detector_version` | same argument as `validator_version`: a prompt change makes historical rows a different population |
+| `0013_open_risk_taxonomy` | `risks` + `risk_key`; `RiskType.OTHER`; re-key the partial unique index | model-discovered risks that still have an identity |
+| `0014_analysis_triggers` | `deals` + `analysis_dirty_first_at`, `analysis_dirty_last_at`, `analysis_dirty_reason`, `analysis_swept_at` | event-driven invalidation and the nightly sweep, §3 |
 
 Also non-schema but blocking: **nothing writes `deals.last_activity_at`**, so
 Gate 2 staleness has no input and the `stale_days` filter lies. Ingest and the
