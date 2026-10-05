@@ -47,6 +47,16 @@ import type {
   DocumentSourceType,
   EvidenceItem,
   Page,
+  AttendeeFilters,
+  AttendeeResolve,
+  AttendeeWrite,
+  MeetingAnalysis,
+  MeetingAttendee,
+  MeetingBrief,
+  MeetingDetail,
+  MeetingFilters,
+  MeetingListItem,
+  MeetingWrite,
   RecommendationAccept,
   RecommendationDetail,
   RecommendationDismiss,
@@ -122,6 +132,21 @@ export const keys = {
 
   /** Phase 11's list. Named here because accepting a recommendation writes one. */
   tasks: () => ['tasks'] as const,
+
+  meetings: (dealId: string, filters?: MeetingFilters) =>
+    filters
+      ? (['deals', dealId, 'meetings', filters] as const)
+      : (['deals', dealId, 'meetings'] as const),
+  meeting: (dealId: string, meetingId: string) =>
+    ['deals', dealId, 'meetings', meetingId] as const,
+  meetingBrief: (dealId: string, meetingId: string) =>
+    ['deals', dealId, 'meetings', meetingId, 'brief'] as const,
+  meetingAnalysis: (dealId: string, meetingId: string) =>
+    ['deals', dealId, 'meetings', meetingId, 'analysis'] as const,
+  attendees: (dealId: string, meetingId: string, filters?: AttendeeFilters) =>
+    filters
+      ? (['deals', dealId, 'meetings', meetingId, 'attendees', filters] as const)
+      : (['deals', dealId, 'meetings', meetingId, 'attendees'] as const),
 } as const
 
 // ------------------------------------------------------------------ System
@@ -355,4 +380,110 @@ export const recommendations = {
       method: 'POST',
       body,
     }),
+}
+
+// ---------------------------------------------------------- Meetings (p7)
+
+export const meetings = {
+  /** A bare array. Unpaginated: one deal's meeting track. */
+  list: (dealId: string, filters: MeetingFilters = {}) =>
+    apiJson<MeetingListItem[]>(`/deals/${dealId}/meetings`, { query: filters }),
+
+  get: (dealId: string, meetingId: string) =>
+    apiJson<MeetingDetail>(`/deals/${dealId}/meetings/${meetingId}`),
+
+  create: (dealId: string, body: MeetingWrite) =>
+    apiJson<MeetingDetail>(`/deals/${dealId}/meetings`, { method: 'POST', body }),
+
+  update: (dealId: string, meetingId: string, body: Partial<MeetingWrite>) =>
+    apiJson<MeetingDetail>(`/deals/${dealId}/meetings/${meetingId}`, {
+      method: 'PATCH',
+      body,
+    }),
+
+  remove: (dealId: string, meetingId: string) =>
+    apiJson<void>(`/deals/${dealId}/meetings/${meetingId}`, { method: 'DELETE' }),
+
+  /**
+   * The stored brief.
+   *
+   * **404 is the normal "not generated yet" state, not an error** -- which is
+   * why task 7.3 says GET first and POST only when absent. A caller that
+   * treats this 404 as a failure shows a broken panel on every meeting that
+   * simply has no brief.
+   */
+  getBrief: (dealId: string, meetingId: string) =>
+    apiJson<MeetingBrief>(`/deals/${dealId}/meetings/${meetingId}/brief`),
+
+  /**
+   * Generate the brief. Cached: a second request returns the stored one
+   * unless `force` replaces it.
+   *
+   * 503 when the AI layer is disabled (`AIDisabled` is mapped to it), so this
+   * is one of the few places a model outage is visible as a status code
+   * rather than inside a 200.
+   */
+  generateBrief: (dealId: string, meetingId: string, force = false) =>
+    apiJson<MeetingBrief>(`/deals/${dealId}/meetings/${meetingId}/brief`, {
+      method: 'POST',
+      body: { force },
+    }),
+
+  analysis: (dealId: string, meetingId: string) =>
+    apiJson<MeetingAnalysis>(`/deals/${dealId}/meetings/${meetingId}/analysis`),
+
+  /**
+   * Queue analysis. Answers **202**, not 200 -- the work is accepted, not
+   * done; the worker claims it on its own poll.
+   *
+   * 409 when `analysis_status` is already `complete` and `force` is not set.
+   */
+  queueAnalysis: (
+    dealId: string,
+    meetingId: string,
+    body: { force?: boolean; transcript_document_id?: string; focus?: string[] } = {},
+  ) =>
+    apiJson<MeetingAnalysis>(`/deals/${dealId}/meetings/${meetingId}/analysis`, {
+      method: 'POST',
+      body,
+    }),
+}
+
+export const attendees = {
+  list: (dealId: string, meetingId: string, filters: AttendeeFilters = {}) =>
+    apiJson<MeetingAttendee[]>(`/deals/${dealId}/meetings/${meetingId}/attendees`, {
+      query: filters,
+    }),
+
+  create: (dealId: string, meetingId: string, body: AttendeeWrite) =>
+    apiJson<MeetingAttendee>(`/deals/${dealId}/meetings/${meetingId}/attendees`, {
+      method: 'POST',
+      body,
+    }),
+
+  update: (dealId: string, meetingId: string, attendeeId: string, body: Partial<AttendeeWrite>) =>
+    apiJson<MeetingAttendee>(
+      `/deals/${dealId}/meetings/${meetingId}/attendees/${attendeeId}`,
+      { method: 'PATCH', body },
+    ),
+
+  /** 204. Removes the attendance record, never the contact. */
+  remove: (dealId: string, meetingId: string, attendeeId: string) =>
+    apiJson<void>(`/deals/${dealId}/meetings/${meetingId}/attendees/${attendeeId}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Resolve a spoken name to a tracked person (plan 7.6).
+   *
+   * Three refusals worth rendering as sentences rather than "request failed":
+   * **422** for an internal attendee (your own people are not customer
+   * contacts), **409** when it is already resolved (pass `force` to re-point),
+   * and **409** when that contact is already an attendee on this meeting.
+   */
+  resolve: (dealId: string, meetingId: string, attendeeId: string, body: AttendeeResolve) =>
+    apiJson<MeetingAttendee>(
+      `/deals/${dealId}/meetings/${meetingId}/attendees/${attendeeId}/resolve`,
+      { method: 'POST', body },
+    ),
 }

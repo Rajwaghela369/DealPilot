@@ -569,17 +569,39 @@ POST   /deals/{id}/meetings/{mid}/attendees/{aid}/resolve
 critical stage is recorded `failed` and not retried. The UI needs a visible
 `failed` state with the reason, or a stuck meeting looks like a slow one.
 
+Four contract details, verified live:
+
+- **`GET .../brief` answers 404 when no brief exists,** and that is the normal
+  state of most meetings rather than an error. Caught and rendered as an empty
+  state with a generate button; letting it reach `ErrorState` would put a red
+  panel on every un-briefed meeting.
+- **`analysis_error` is set on `complete` runs too,** not only failed ones -- a
+  meeting whose summary stage died still has its facts. So it is rendered
+  independently of the status, because keying it to `failed` would make a
+  degraded run read as clean.
+- **`POST .../analysis` answers 202,** and 409 when already `complete` without
+  `force`. A `failed` meeting needs no `force`, so the button says "Re-run"
+  for both but only passes the flag when complete.
+- **`POST .../brief` answers 503 when the AI layer is disabled.** One of the
+  few places a model outage surfaces as a status code rather than inside a 200.
+  Unlike the risk detector there is no deterministic fallback, so the button
+  is disabled rather than left to fail.
+
+The route module's own comment claiming *"no worker consumes that queue"* is
+**stale**: `worker.py` has `poll_queued_meetings` and `run_meeting_analysis`,
+so queued meetings genuinely are drained.
+
 ### Tasks
 
-- [ ] **7.1 Meeting list + create.**
-- [ ] **7.2 Meeting detail** with the three panels.
-- [ ] **7.3 Brief panel.** `GET` first; `POST` only when absent. Make
+- [x] **7.1 Meeting list + create.**
+- [x] **7.2 Meeting detail** with the three panels.
+- [x] **7.3 Brief panel.** `GET` first; `POST` only when absent. Make
       regenerate explicit -- it replaces the stored brief.
-- [ ] **7.4 Analysis status,** including `failed` with its reason.
-- [ ] **7.5 Attendee list** with resolved / unresolved clearly separated.
-- [ ] **7.6 Resolve flow** -- pick an existing contact or create one from
+- [x] **7.4 Analysis status,** including `failed` with its reason.
+- [x] **7.5 Attendee list** with resolved / unresolved clearly separated.
+- [x] **7.6 Resolve flow** -- pick an existing contact or create one from
       `raw_name`. This is the main way contacts get created in practice.
-- [ ] **7.7 Transcript upload** points at phase 4 with
+- [x] **7.7 Transcript upload** points at phase 4 with
       `source_type=meeting_transcript`, which is what makes a meeting
       analysable.
 

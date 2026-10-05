@@ -8,6 +8,8 @@ import { DealLayout } from './pages/deals/DealLayout'
 import { DealOverviewPage } from './pages/deals/DealOverviewPage'
 import { DocumentsPage } from './pages/deals/DocumentsPage'
 import { RisksPage } from './pages/deals/RisksPage'
+import { MeetingsPage } from './pages/deals/MeetingsPage'
+import { MeetingDetailPage } from './pages/deals/MeetingDetailPage'
 import { ComingSoon } from './pages/ComingSoon'
 
 /**
@@ -61,26 +63,8 @@ export const router = createBrowserRouter([
               // Phase 5's call site. Read-only until phase 6 adds the
               // decision controls -- see the note in `RisksPage`.
               { path: 'risks', element: <RisksPage /> },
-              {
-                path: 'meetings',
-                element: (
-                  <ComingSoon
-                    phase="Phase 7"
-                    title="Meetings"
-                    body="The meeting track, its generated brief, and the attendee resolution that feeds the stakeholder map."
-                  />
-                ),
-              },
-              {
-                path: 'meetings/:meetingId',
-                element: (
-                  <ComingSoon
-                    phase="Phase 7"
-                    title="Meeting detail"
-                    body="Details, brief and attendees."
-                  />
-                ),
-              },
+              { path: 'meetings', element: <MeetingsPage /> },
+              { path: 'meetings/:meetingId', element: <MeetingDetailPage /> },
               {
                 path: 'people',
                 element: (

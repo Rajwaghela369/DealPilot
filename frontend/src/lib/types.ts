@@ -664,3 +664,190 @@ export interface RecommendationFilters {
    */
   orphaned?: boolean
 }
+
+// ---------------------------------------------------------- Meetings (p7)
+
+export const MEETING_TYPES = [
+  'discovery',
+  'demo',
+  'technical_review',
+  'security_review',
+  'negotiation',
+  'check_in',
+  'other',
+] as const
+export type MeetingType = (typeof MEETING_TYPES)[number]
+
+export const MEETING_STATUSES = ['scheduled', 'completed', 'cancelled'] as const
+export type MeetingStatus = (typeof MEETING_STATUSES)[number]
+
+/**
+ * The analyzer's state machine.
+ *
+ * `failed` is the one that needs a visible home: a run that fails a critical
+ * stage is recorded `failed` and **not retried**, so without somewhere to show
+ * it a stuck meeting looks like a slow one forever (plan 7.4).
+ */
+export const ANALYSIS_STATUSES = [
+  'not_started',
+  'queued',
+  'running',
+  'complete',
+  'failed',
+] as const
+export type MeetingAnalysisStatus = (typeof ANALYSIS_STATUSES)[number]
+
+export const SENTIMENTS = ['positive', 'neutral', 'negative', 'unknown'] as const
+export type Sentiment = (typeof SENTIMENTS)[number]
+
+export interface MeetingListItem {
+  id: string
+  title: string
+  /** Native enum, stable. */
+  meeting_type: MeetingType
+  status: MeetingStatus
+  scheduled_at: string | null
+  started_at: string | null
+  ended_at: string | null
+  sentiment: Sentiment | null
+  analysis_status: MeetingAnalysisStatus
+  analyzed_at: string | null
+  /** Derived: whether a transcript document is attached. */
+  has_transcript: boolean
+  attendee_count: number
+}
+
+export interface MeetingDetail extends MeetingListItem {
+  deal_id: string
+  deal_name: string
+  account_id: string
+  account_name: string
+  summary: string | null
+  /** Set by the document-upload flow, never by a client PATCHing a FK. */
+  transcript_document_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** The narrow projection the analyzer screen polls. */
+export interface MeetingAnalysis {
+  meeting_id: string
+  analysis_status: MeetingAnalysisStatus
+  analyzed_at: string | null
+  summary: string | null
+  sentiment: Sentiment | null
+  has_transcript: boolean
+  /**
+   * Which degradable stages failed, and why.
+   *
+   * Set on a **`complete`** run as well as a failed one -- a meeting whose
+   * summary stage died still has its facts. So this must be rendered
+   * independently of the status, or a partially-degraded run reads as clean.
+   */
+  analysis_error: string | null
+}
+
+export interface MeetingBrief {
+  id: string
+  meeting_id: string
+  objectives: string[] | null
+  context_summary: string | null
+  key_risks: string[] | null
+  recommended_questions: string[] | null
+  /** Which model wrote it. */
+  model: string | null
+  generated_at: string
+}
+
+export interface MeetingWrite {
+  title: string
+  meeting_type?: MeetingType
+  status?: MeetingStatus
+  scheduled_at?: string | null
+  started_at?: string | null
+  ended_at?: string | null
+  summary?: string | null
+  sentiment?: Sentiment | null
+}
+
+export interface MeetingFilters {
+  status?: MeetingStatus[]
+  meeting_type?: MeetingType[]
+  analysis_status?: MeetingAnalysisStatus[]
+  /** Scheduled and still in the future -- the prep queue. */
+  upcoming?: boolean
+  has_transcript?: boolean
+  q?: string
+  sort?: string
+}
+
+/**
+ * One person on one call.
+ *
+ * `raw_name` is the name as it appeared -- in the invite, or as a transcript
+ * speaker label. `contact_id` is the optional *resolution* of that name to a
+ * known person, and an unresolved attendee is the raw signal for "missing
+ * stakeholder" rather than a data-entry failure.
+ */
+export interface MeetingAttendee {
+  id: string
+  raw_name: string
+  contact_id: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_title: string | null
+  is_internal: boolean
+  /**
+   * Only meaningful once the meeting is `completed`. On a scheduled meeting
+   * this really means "invited", which the column cannot distinguish -- so the
+   * UI must not label it "attended" before the meeting has happened.
+   */
+  attended: boolean
+  resolved: boolean
+}
+
+export interface AttendeeWrite {
+  raw_name: string
+  contact_id?: string | null
+  is_internal?: boolean
+  attended?: boolean
+}
+
+/** A new person created from an attendee. No `account_id`: it is derived. */
+export interface ContactIdentity {
+  first_name: string
+  last_name: string
+  email?: string | null
+  title?: string | null
+  phone?: string | null
+}
+
+export interface StakeholderIdentity {
+  buying_role?: string | null
+  influence?: string | null
+  sentiment?: string | null
+  is_primary?: boolean
+  notes?: string | null
+}
+
+/**
+ * Turn "Dana (procurement)" into a tracked person, in one transaction.
+ *
+ * **Exactly one** of `contact_id` (link someone who exists) or `contact`
+ * (create them first) -- sending both or neither is a 422. `stakeholder`
+ * optionally adds the `deal_contacts` row in the same call, so it cannot
+ * half-fail with a contact created and no stakeholder link.
+ */
+export interface AttendeeResolve {
+  contact_id?: string
+  contact?: ContactIdentity
+  stakeholder?: StakeholderIdentity
+  /** Re-point an attendee that is already resolved; otherwise that is a 409. */
+  force?: boolean
+}
+
+export interface AttendeeFilters {
+  resolved?: boolean
+  is_internal?: boolean
+  attended?: boolean
+}

@@ -9,7 +9,14 @@
  */
 
 import type { BadgeTone } from '../components/ui/Badge'
-import type { AnalysisState, DealStage, RiskLevel } from './types'
+import type {
+  AnalysisState,
+  DealStage,
+  MeetingAnalysisStatus,
+  MeetingStatus,
+  RiskLevel,
+  Sentiment,
+} from './types'
 
 export const EMPTY = '—'
 
@@ -215,5 +222,82 @@ export function analysisExplanation(
       return `Not marked dirty, but it has not been swept in ${sweepHours}h, so the sweep will pick it up.`
     default:
       return ''
+  }
+}
+
+/**
+ * Meeting analysis status -> badge, with the sentence that says what to do.
+ *
+ * `failed` is the state this exists for. A run that fails a critical stage is
+ * recorded `failed` and **never retried**, so without a visible terminal
+ * state a stuck meeting is indistinguishable from a slow one (plan 7.4). It
+ * is red, and the only one that tells the user to act.
+ *
+ * `not_started` is neutral, not a warning: most meetings have no transcript
+ * and nothing to analyse, so flagging them would make the normal case look
+ * broken.
+ */
+export function meetingAnalysisLabel(status: MeetingAnalysisStatus): {
+  tone: BadgeTone
+  label: string
+  explanation: string
+} {
+  switch (status) {
+    case 'complete':
+      return {
+        tone: 'ok',
+        label: 'Analysed',
+        explanation: 'The pipeline finished. Check for a partial failure below.',
+      }
+    case 'queued':
+      return {
+        tone: 'info',
+        label: 'Queued',
+        explanation:
+          'Accepted, not done. The worker claims it on its next poll -- if this never changes, the worker is not running.',
+      }
+    case 'running':
+      return { tone: 'info', label: 'Running', explanation: 'Analysis is in progress.' }
+    case 'failed':
+      return {
+        tone: 'danger',
+        label: 'Failed',
+        explanation:
+          'A critical stage failed and this is not retried automatically. It will stay here until someone re-runs it.',
+      }
+    case 'not_started':
+    default:
+      return {
+        tone: 'neutral',
+        label: 'Not analysed',
+        explanation: 'Nothing has been queued. A transcript is what makes a meeting analysable.',
+      }
+  }
+}
+
+/** Meeting status -> tone. Only `cancelled` carries a negative valence. */
+export function meetingStatusTone(status: MeetingStatus): BadgeTone {
+  if (status === 'completed') return 'ok'
+  if (status === 'cancelled') return 'danger'
+  return 'accent'
+}
+
+/**
+ * Sentiment -> tone.
+ *
+ * `unknown` and null are both neutral and read as "not determined". The
+ * analyzer reports sentiment it inferred, so a missing value means it did not
+ * run or could not tell -- never "neutral sentiment", which is a finding.
+ */
+export function sentimentTone(sentiment: Sentiment | null): BadgeTone {
+  switch (sentiment) {
+    case 'positive':
+      return 'ok'
+    case 'negative':
+      return 'danger'
+    case 'neutral':
+      return 'info'
+    default:
+      return 'neutral'
   }
 }
