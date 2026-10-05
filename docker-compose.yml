@@ -96,6 +96,16 @@ services:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+    # Python rather than curl: the slim image has no curl or wget, and adding
+    # one to the image for a healthcheck is a dependency for a probe.
+    # `/health` is unversioned on purpose -- see app/main.py.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=4).status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Migrations run on start, so the first probe must not fire before them.
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,9 +134,11 @@ services:
       postgres:
         condition: service_healthy
       # Migrations run on backend start, so the worker must not query before
-      # the schema exists.
+      # the schema exists. `service_healthy` rather than `service_started`:
+      # "the process launched" is not "the schema is there", and the worker's
+      # first act is to poll for queued meetings.
       backend:
-        condition: service_started
+        condition: service_healthy
 
   frontend:
     build: ./frontend

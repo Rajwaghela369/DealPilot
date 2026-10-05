@@ -13,9 +13,9 @@ fills those tables without breaking the contract.
 
 ## 1. Design principles
 
-**1. A model is used only where a rule cannot do the job.** Four of the ten
-`risk_type` values are joins over existing tables and can never hallucinate.
-Two more (`missed_commitment`, `gone_quiet`) are equally computable. Work that
+**1. A model is used only where a rule cannot do the job.** Six of the ten
+`risk_type` values are joins over existing tables and can never hallucinate,
+including the clock-driven `missed_commitment` and `gone_quiet`. Work that
 SQL can do stays in SQL — not to save money (see §7, the money is trivial) but
 because a deterministic rule cannot flicker, cannot be injected, and gives the
 model pass something to be measured against.
@@ -497,7 +497,7 @@ Adaptation without fine-tuning, from a column that already exists.
 ### Keep the deterministic detector — as labels
 
 Run `detect.py` before the AI pass and keep both writing. Not as a fallback:
-**the four deterministic risks are free ground truth.** If SQL says a deal is
+**the six deterministic risks are free ground truth.** If SQL says a deal is
 stalled and the AI pass did not propose `stalled_stage`, that is a measured
 recall miss with no human labelling. You get a regression suite on every run.
 

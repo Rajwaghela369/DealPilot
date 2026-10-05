@@ -217,6 +217,39 @@ real dwell time per stage among deals that closed, once the seeder exists.
 `closed_at`, in one transaction. `stage_note` rides along and is rejected
 without a `stage`.
 
+### Accounts and contacts — `routes/accounts.py`
+
+```
+POST   /accounts                                 create
+GET    /accounts                  ?q=            list, with deal_count/contact_count
+GET    /accounts/{id}                            detail
+PATCH  /accounts/{id}                            partial update
+DELETE /accounts/{id}                            409 if it has deals
+
+POST   /accounts/{id}/contacts                   create; 409 on a repeat email
+GET    /accounts/{id}/contacts    ?q=            unpaginated picker
+GET    /accounts/{id}/contacts/{contact_id}
+PATCH  /accounts/{id}/contacts/{contact_id}
+DELETE /accounts/{id}/contacts/{contact_id}      unresolves attendees, drops stakeholder links
+```
+
+The entry point to the whole API: `DealCreate` requires an `account_id` and
+`DealStakeholderCreate` an existing `contact_id`, and before this collection
+existed only the transcript-resolution path could mint either — so a stakeholder
+had to have spoken on a recorded call before they could be tracked.
+
+Contacts nest under accounts because `contacts.account_id` is the foreign key,
+not `deal_id`: one person can appear in several deals with one company, and
+everything deal-specific lives on `deal_contacts`. A delete sets
+`meeting_attendees.contact_id` back to NULL rather than removing the row — the
+transcript still had a speaker of that name, which Phase 2 treats as a signal.
+
+`DELETE /accounts/{id}` refuses while deals exist. The foreign keys would
+cascade through meetings, documents, facts and risks, and `claim_evidence`
+has no foreign key on `claim_id`, so its links would survive as orphans.
+
+---
+
 ### Stakeholders — `routes/deals/stakeholders.py`
 
 ```
@@ -495,10 +528,12 @@ foreign-key `IntegrityError` and reach the client as a 500.
 
 ## 7. Known gaps
 
-- **No worker.** `POST /deals/{id}/analysis` runs the deterministic detector
-  synchronously — an explicit trigger is a stopgap, since detection should run on
-  a schedule or on the writes that could change its answer.
-  `POST …/meetings/{id}/analysis` sets `queued` and nothing consumes it.
+- ~~**No worker.**~~ **Closed.** `backend/worker.py` runs the graph and carries
+  four pollers (analysis claim, dirty deals, nightly sweep, abandoned-stream
+  reaper). Writes invalidate through `services/analysis.py:record_change`, and
+  `GET /deals/{id}/analysis` reports the pending state. *But the worker
+  container has never been started and has no `langchain` installed — see the
+  root README's Known gaps.*
 - **Placeholder thresholds** in `queries.py`: `STALL_THRESHOLD_DAYS`
   (14/21/30/60/21) and `CLOSE_DATE_WARNING_DAYS` (21). They should be derived
   from real dwell-time data once a seeder exists.
@@ -512,11 +547,14 @@ foreign-key `IntegrityError` and reach the client as a 500.
 - **`confidence` is not comparable across sources.** Deterministic risks are
   written with `1.0` because a SQL rule is not a guess, which means the column
   means something different for them than it will for LLM output.
-- **Nothing writes `deals.last_activity_at`.** The `stale_days` filter is live
-  but the column is never set. Completing a task is the natural first writer.
-- **No test suite.** Everything above was verified by hand against a live
-  database. `tests/test_model_registry.py` is referenced in
-  `models/__init__.py` and does not exist.
+- ~~**Nothing writes `deals.last_activity_at`.**~~ **Closed.**
+  `services/activity.py:touch_deal` advances it, and `gone_quiet` reads it.
+- ~~**No test suite.**~~ **Closed.** 173 tests, and
+  `tests/test_model_registry.py` exists. Caveat worth keeping: until
+  `tests/test_accounts_api.py` every test asserted against *services*, so the
+  other 60 endpoints still have no route-level coverage — status codes,
+  `extra="forbid"` and path-vs-body scoping are only exercised for accounts and
+  contacts. Schema task 8.4 remains open.
 - **Missing index** `(deal_id, due_date) WHERE status = 'open'` on `tasks`,
   which would serve both `NEXT_ACTION` and the per-deal task list.
 - **`release_source_fact` is untested** — no `extracted_facts` rows exist yet.
