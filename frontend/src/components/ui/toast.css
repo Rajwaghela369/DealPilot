@@ -1,0 +1,68 @@
+.ui-toasts {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* The stack is only clickable where a toast actually is, so it never
+   * swallows a click on the page underneath. */
+  pointer-events: none;
+}
+
+.ui-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  color: var(--text-h);
+  animation: ui-toast-in 0.18s ease;
+}
+
+.ui-toast--error {
+  border-color: var(--danger-border);
+}
+
+.ui-toast--ok {
+  border-color: var(--ok-border);
+}
+
+.ui-toast__message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.ui-toast__close {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.ui-toast__close:hover {
+  color: var(--text-h);
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast {
+    animation: none;
+  }
+}

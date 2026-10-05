@@ -1,0 +1,160 @@
+/* Phase 5: the evidence drawer.
+ *
+ * The visual rule here is that nothing should read as more certain than it
+ * is. So there is one accent (the highlighted span, which is a fact about
+ * where text sits) and the only other colour comes from verification state,
+ * where it carries meaning. */
+
+.evidence__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.evidence__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.evidence__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.evidence__speaker {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.evidence__when {
+  font-size: var(--text-xs);
+}
+
+.evidence__verification-note {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* --- The recorded snippet, before expanding --- */
+
+.evidence__snippet {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--accent-border);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text-h);
+}
+
+/* --- record-kind evidence --- */
+
+.evidence__record code,
+.evidence__value code {
+  font-size: var(--text-xs);
+}
+
+.evidence__record-id {
+  font-size: var(--text-xs);
+}
+
+.evidence__value {
+  font-size: var(--text-sm);
+}
+
+/* --- derived-kind evidence --- */
+
+.evidence__derived {
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text-h);
+}
+
+.evidence__derived-note {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* --- The resolved chunk --- */
+
+.evidence__quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-strong);
+}
+
+.evidence__quote-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  color: var(--text-h);
+}
+
+.evidence__quote-meta .ui-muted {
+  font-size: var(--text-xs);
+}
+
+.evidence__chunk {
+  margin: 0;
+  /* Capped and scrollable: a transcript chunk runs to a thousand words, and
+   * the drawer has to stay navigable with several rows expanded. */
+  max-height: 260px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text);
+  /* Transcripts are newline-separated speaker turns; collapsing them would
+   * run every speaker into one paragraph. */
+  white-space: pre-wrap;
+}
+
+/* The cited span. The one place an accent is used for emphasis rather than
+ * for state -- it marks *where* the quote is, which is not a judgement about
+ * whether the quote is right. */
+.evidence__mark {
+  padding: 1px 2px;
+  border-radius: 3px;
+  background: var(--accent-bg);
+  box-shadow: inset 0 -1px 0 var(--accent-border);
+  color: var(--text-h);
+}
+
+.evidence__drift {
+  font-size: var(--text-sm);
+}
+
+.evidence__drift em {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--text-h);
+}
+
+.evidence__drift-note {
+  font-size: var(--text-xs);
+}
+
+.evidence__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}

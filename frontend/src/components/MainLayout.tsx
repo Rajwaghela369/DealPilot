@@ -1,20 +1,20 @@
-import { useState } from 'react'
+import { Outlet } from 'react-router'
 import { Sidebar } from './Sidebar'
-import { TAB_LABELS, type TabKey } from './tabs'
+import { BootCheck } from './BootCheck'
 import './Layout.css'
 
+/**
+ * Task 0.4. The `useState<TabKey>` is gone and the content area is an
+ * `<Outlet/>`; the sidebar reads the active page from the URL.
+ */
 export function MainLayout() {
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
-
   return (
     <div className="app-shell">
-      <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} />
+      <Sidebar />
 
       <main className="app-content">
-        <div className="app-content-inner">
-          <h1>{TAB_LABELS[activeTab]}</h1>
-          <p className="app-content-hint">This is the {TAB_LABELS[activeTab]} tab.</p>
-        </div>
+        <BootCheck />
+        <Outlet />
       </main>
     </div>
   )

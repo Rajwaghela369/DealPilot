@@ -51,6 +51,7 @@
 
 .sidebar-tab {
   display: flex;
+  text-decoration: none;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -81,6 +82,7 @@
 .sidebar-tab:hover {
   background: var(--surface-hover);
   color: var(--text-h);
+  text-decoration: none;
 }
 
 .sidebar-tab.active {
@@ -94,24 +96,72 @@
   color: var(--accent-2);
 }
 
-/* Content */
+/* Content
+ *
+ * This used to centre a single placeholder sentence. Now it hosts real pages,
+ * so it is top-aligned and scrolls independently of the sidebar -- a long
+ * pipeline table should not push the nav off the top of the window.
+ *
+ * `min-width: 0` is load-bearing: without it a flex child refuses to shrink
+ * below its content, so one wide table makes the whole shell scroll sideways
+ * and takes the sidebar with it. The table's own `.ui-table-scroll` is where
+ * that overflow belongs.
+ */
 
 .app-content {
   flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+/* Every page's outer wrapper. The max-width is a reading measure, not a
+ * breakpoint: a twelve-column table at 2400px is unreadable. */
+.page {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 1280px;
+  margin: 0 auto;
 }
 
-.app-content-inner {
-  text-align: center;
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
-.app-content-hint {
+.page-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  letter-spacing: -0.5px;
+}
+
+.page-subtitle {
+  margin-top: var(--space-1);
   color: var(--text-dim);
-  font-size: 15px;
-  margin-top: 4px;
+  font-size: var(--text-base);
+}
+
+/* --- The boot-check banner (components/BootCheck.tsx) --- */
+
+.boot-banner {
+  max-width: 1280px;
+  margin: 0 auto var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+  color: var(--text-h);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.boot-banner code {
+  font-size: var(--text-xs);
+  padding: 2px 6px;
 }
 
 /* Responsive */

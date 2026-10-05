@@ -1,0 +1,118 @@
+/**
+ * The whole visual vocabulary, in one place.
+ *
+ * Task 0.6 asks for the component-library decision to be taken here rather
+ * than in phase 6, and the decision is **plain CSS with custom properties**.
+ * The reasoning: `index.css` and `Layout.css` already define a coherent dark
+ * theme, and the plan's own guidance is that a component library should "set
+ * the look rather than fighting it with overrides" -- which against an
+ * existing dark theme means either discarding this one or overriding the
+ * library everywhere. Neither pays for itself across the eight primitives
+ * below, all of which are under forty lines of CSS.
+ *
+ * Two places a library may still earn its keep later, neither of which is a
+ * look-and-feel concern and neither of which forces a rewrite of what is
+ * built here: charting in phase 12, and virtualisation if a table outgrows a
+ * page.
+ *
+ * Colour, space, radius and type live here; layout stays in `Layout.css`.
+ * `index.css` keeps the base colours so the app has a background before any
+ * of this loads, and this file is the layer later phases extend.
+ */
+
+:root {
+  /* --- Space. A 4px scale; every gap and pad below is one of these. --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* --- Radius --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* --- Type scale. One scale, so no page invents a size. --- */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14.5px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+
+  /* --- Status colours ---
+   *
+   * Six, and they are not decoration. Phase 5.5 requires `stale` and
+   * `rejected` to be visually distinct states: a stale claim is grounded in
+   * evidence that has been overtaken, a rejected one is wrong. Giving them
+   * one colour would merge two different answers to "can I trust this",
+   * which is the one thing this UI is not allowed to do -- so `--warn`
+   * (amber, "still true, no longer current") and `--danger` (red, "not
+   * true") are separate tokens and never aliases.
+   */
+  --ok: #3ddc97;
+  --ok-bg: rgba(61, 220, 151, 0.12);
+  --ok-border: rgba(61, 220, 151, 0.32);
+
+  --warn: #f5b64c;
+  --warn-bg: rgba(245, 182, 76, 0.12);
+  --warn-border: rgba(245, 182, 76, 0.32);
+
+  --danger: #ff6b6b;
+  --danger-bg: rgba(255, 107, 107, 0.12);
+  --danger-border: rgba(255, 107, 107, 0.32);
+
+  --info: #5b8cff;
+  --info-bg: rgba(91, 140, 255, 0.12);
+  --info-border: rgba(91, 140, 255, 0.32);
+
+  /* Neutral: a state with no valence. The default badge. */
+  --neutral: var(--text);
+  --neutral-bg: var(--surface);
+  --neutral-border: var(--border);
+
+  /* --- Elevation --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg:
+    rgba(0, 0, 0, 0.5) 0 18px 50px -12px, rgba(0, 0, 0, 0.3) 0 6px 12px -4px;
+
+  /* --- Motion. Short enough not to be in the way. --- */
+  --ease: 0.15s ease;
+
+  /* --- Layer order ---
+   * The drawer (phase 5) sits over the page, and the toast over the drawer:
+   * a mutation failure inside the drawer must not be hidden by it.
+   */
+  --z-drawer: 100;
+  --z-toast: 200;
+}
+
+/* Honour the OS setting for everyone who asks for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease: 0s;
+  }
+}
+
+/* --- Shared element styles the primitives all assume --- */
+
+a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* A focus ring that is visible on every surface here, and only for keyboard
+ * users -- `:focus-visible` rather than `:focus`, so a mouse click on a
+ * button does not leave a ring behind. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
