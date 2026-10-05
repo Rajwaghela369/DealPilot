@@ -10,6 +10,12 @@ import { DocumentsPage } from './pages/deals/DocumentsPage'
 import { RisksPage } from './pages/deals/RisksPage'
 import { MeetingsPage } from './pages/deals/MeetingsPage'
 import { MeetingDetailPage } from './pages/deals/MeetingDetailPage'
+import { PeoplePage } from './pages/deals/PeoplePage'
+import { FactsPage } from './pages/deals/FactsPage'
+import { TasksPage } from './pages/tasks/TasksPage'
+import { ChatPage } from './pages/chat/ChatPage'
+import { DealChat } from './pages/chat/DealChat'
+import { DashboardPage } from './pages/DashboardPage'
 import { ComingSoon } from './pages/ComingSoon'
 
 /**
@@ -25,9 +31,9 @@ import { ComingSoon } from './pages/ComingSoon'
  * header standing and replace only the panel -- a single root boundary would
  * blank the whole window and lose the URL context that says which deal failed.
  *
- * Routes for phases not yet built resolve to `ComingSoon` rather than being
- * absent, so the sub-nav is honest: a tab that 404s inside the app reads as a
- * bug, and a tab missing from the nav hides what the product is going to do.
+ * Every phase is built, so the only remaining `ComingSoon` is the catch-all
+ * for a URL that matches nothing. That is not an error boundary: nothing
+ * threw, the path simply is not one of ours.
  */
 export const router = createBrowserRouter([
   {
@@ -36,16 +42,7 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: [
       // Phase 12. Last, because every number on it is established by 1-11.
-      {
-        index: true,
-        element: (
-          <ComingSoon
-            phase="Phase 12"
-            title="Dashboard"
-            body="Pipeline by stage, deals needing attention, tasks due and AI status. Built last, because every figure on it is client-side arithmetic over the lists phases 1-11 establish."
-          />
-        ),
-      },
+      { index: true, element: <DashboardPage /> },
 
       // ------------------------------------------------- Phase 2 and 3
       {
@@ -65,37 +62,10 @@ export const router = createBrowserRouter([
               { path: 'risks', element: <RisksPage /> },
               { path: 'meetings', element: <MeetingsPage /> },
               { path: 'meetings/:meetingId', element: <MeetingDetailPage /> },
-              {
-                path: 'people',
-                element: (
-                  <ComingSoon
-                    phase="Phase 8"
-                    title="People"
-                    body="Stakeholders, and the roll-up of everyone who has spoken in a meeting but is not tracked yet."
-                  />
-                ),
-              },
+              { path: 'people', element: <PeoplePage /> },
               { path: 'documents', element: <DocumentsPage /> },
-              {
-                path: 'facts',
-                element: (
-                  <ComingSoon
-                    phase="Phase 9"
-                    title="Facts"
-                    body="What extraction found, and what each fact is grounded in. Read-only over HTTP today: there is no accept/reject endpoint, so this cannot be the review queue the design intends."
-                  />
-                ),
-              },
-              {
-                path: 'chat',
-                element: (
-                  <ComingSoon
-                    phase="Phase 10"
-                    title="Deal assistant"
-                    body="Ask questions about this deal and get cited answers, streamed over SSE."
-                  />
-                ),
-              },
+              { path: 'facts', element: <FactsPage /> },
+              { path: 'chat', element: <DealChat /> },
             ],
           },
         ],
@@ -112,23 +82,13 @@ export const router = createBrowserRouter([
       },
 
       // ------------------------------------------------- Phases 11, 10
-      {
-        path: 'tasks',
-        element: (
-          <ComingSoon
-            phase="Phase 11"
-            title="Tasks"
-            body="One table of work across the pipeline, including the tasks created by accepting a recommendation."
-          />
-        ),
-      },
+      { path: 'tasks', element: <TasksPage /> },
       {
         path: 'chat',
         element: (
-          <ComingSoon
-            phase="Phase 10"
+          <ChatPage
             title="Assistant"
-            body="The global assistant, scoped across every deal."
+            subtitle="Ask across every deal. Answers come back with citations."
           />
         ),
       },

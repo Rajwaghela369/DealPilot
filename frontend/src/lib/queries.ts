@@ -48,6 +48,20 @@ import type {
   EvidenceItem,
   Page,
   AttendeeFilters,
+  ChatMessage,
+  ChatSession,
+  DealParticipant,
+  DealStakeholder,
+  FactFilters,
+  FactListItem,
+  ParticipantFilters,
+  StakeholderCreate,
+  StakeholderWrite,
+  TaskCreate,
+  TaskDetail,
+  TaskFilters,
+  TaskListItem,
+  TaskUpdate,
   AttendeeResolve,
   AttendeeWrite,
   MeetingAnalysis,
@@ -147,6 +161,23 @@ export const keys = {
     filters
       ? (['deals', dealId, 'meetings', meetingId, 'attendees', filters] as const)
       : (['deals', dealId, 'meetings', meetingId, 'attendees'] as const),
+
+  stakeholders: (dealId: string) => ['deals', dealId, 'stakeholders'] as const,
+  participants: (dealId: string, filters?: ParticipantFilters) =>
+    filters
+      ? (['deals', dealId, 'participants', filters] as const)
+      : (['deals', dealId, 'participants'] as const),
+
+  facts: (dealId: string, filters?: FactFilters) =>
+    filters
+      ? (['deals', dealId, 'facts', filters] as const)
+      : (['deals', dealId, 'facts'] as const),
+
+  taskList: (filters: TaskFilters) => ['tasks', filters] as const,
+  task: (taskId: string) => ['tasks', taskId] as const,
+
+  chatSessions: () => ['chat', 'sessions'] as const,
+  chatMessages: (sessionId: string) => ['chat', 'sessions', sessionId, 'messages'] as const,
 } as const
 
 // ------------------------------------------------------------------ System
@@ -486,4 +517,102 @@ export const attendees = {
       `/deals/${dealId}/meetings/${meetingId}/attendees/${attendeeId}/resolve`,
       { method: 'POST', body },
     ),
+}
+
+// ------------------------------------------------------------ People (p8)
+
+export const stakeholders = {
+  /** A bare array. Primary first, then alphabetical -- fixed server-side. */
+  list: (dealId: string) =>
+    apiJson<DealStakeholder[]>(`/deals/${dealId}/stakeholders`),
+
+  /** Needs an existing `contact_id`, which is why phase 1 comes first. */
+  create: (dealId: string, body: StakeholderCreate) =>
+    apiJson<DealStakeholder>(`/deals/${dealId}/stakeholders`, { method: 'POST', body }),
+
+  /** Addressed by the (deal, contact) pair; the surrogate id is internal. */
+  update: (dealId: string, contactId: string, body: StakeholderWrite) =>
+    apiJson<DealStakeholder>(`/deals/${dealId}/stakeholders/${contactId}`, {
+      method: 'PATCH',
+      body,
+    }),
+
+  remove: (dealId: string, contactId: string) =>
+    apiJson<void>(`/deals/${dealId}/stakeholders/${contactId}`, { method: 'DELETE' }),
+}
+
+export const participants = {
+  /**
+   * The roll-up across every meeting on the deal.
+   *
+   * One of two features that deliver real value with **zero model calls** --
+   * it is a join over `meeting_attendees`, so it works with the AI layer off.
+   */
+  list: (dealId: string, filters: ParticipantFilters = {}) =>
+    apiJson<DealParticipant[]>(`/deals/${dealId}/participants`, { query: filters }),
+}
+
+// ------------------------------------------------------------- Facts (p9)
+
+export const facts = {
+  /**
+   * A bare array, and **GET only** -- there is no accept/reject endpoint, so
+   * this cannot be the review queue the design intends (plan 9.1).
+   *
+   * Quarantined facts (`contradicted`, `unsupported`) are filtered out
+   * server-side by `queries.quarantine_filter` and there is no
+   * `?include_quarantined`, so they cannot be shown at all. `partial` *is*
+   * returned, which is why it needs a caution badge rather than a pass.
+   */
+  list: (dealId: string, filters: FactFilters = {}) =>
+    apiJson<FactListItem[]>(`/deals/${dealId}/facts`, { query: filters }),
+}
+
+// ------------------------------------------------------------- Tasks (p11)
+
+export const tasks = {
+  /** Paginated -- a `Page` envelope, unlike every deal sub-resource. */
+  list: (filters: TaskFilters) =>
+    apiJson<Page<TaskListItem>>('/tasks', { query: filters }),
+
+  get: (taskId: string) => apiJson<TaskDetail>(`/tasks/${taskId}`),
+
+  create: (body: TaskCreate) => apiJson<TaskDetail>('/tasks', { method: 'POST', body }),
+
+  update: (taskId: string, body: TaskUpdate) =>
+    apiJson<TaskDetail>(`/tasks/${taskId}`, { method: 'PATCH', body }),
+
+  remove: (taskId: string) => apiJson<void>(`/tasks/${taskId}`, { method: 'DELETE' }),
+}
+
+// -------------------------------------------------------------- Chat (p10)
+
+export const chat = {
+  listSessions: () => apiJson<ChatSession[]>('/chat/sessions'),
+
+  /**
+   * `scope` is required and must agree with `deal_id` -- deal scope requires
+   * one, global scope forbids it, and a mismatch is a 422. Encoded in the
+   * signature so a mismatch cannot be constructed (plan 10.1).
+   */
+  createSession: (input: { scope: 'deal'; dealId: string } | { scope: 'global' }) =>
+    apiJson<ChatSession>('/chat/sessions', {
+      method: 'POST',
+      body: input.scope === 'deal' ? { scope: 'deal', deal_id: input.dealId } : { scope: 'global' },
+    }),
+
+  getSession: (sessionId: string) => apiJson<ChatSession>(`/chat/sessions/${sessionId}`),
+
+  /** Rename only. `scope` and `deal_id` are immutable by design. */
+  renameSession: (sessionId: string, title: string) =>
+    apiJson<ChatSession>(`/chat/sessions/${sessionId}`, { method: 'PATCH', body: { title } }),
+
+  deleteSession: (sessionId: string) =>
+    apiJson<void>(`/chat/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  messages: (sessionId: string) =>
+    apiJson<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`),
+
+  /** The SSE path. Consumed by `streamMessage` in `lib/chatStream.ts`. */
+  messagesPath: (sessionId: string) => `/chat/sessions/${sessionId}/messages`,
 }

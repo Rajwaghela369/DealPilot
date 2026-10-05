@@ -1,0 +1,130 @@
+/* Phase 12: the dashboard.
+ *
+ * Every figure here is client-side arithmetic over list responses, and the
+ * stacked bar is divs rather than a charting dependency -- it is four lines of
+ * CSS and will outlive any library. */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* --- Pipeline by stage --- */
+
+.stagebar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.stagebar__segment {
+  flex-basis: 0;
+  min-width: 4px;
+  transition: flex-grow var(--ease);
+}
+
+/* One hue per stage, stepping along the accent rather than running from bad to
+ * good: a deal in discovery is earlier than one in negotiation, not worse, so a
+ * red-to-green gradient would assert a judgement the data does not carry. */
+.stagebar__segment--qualification { background: #3d4a7a; }
+.stagebar__segment--discovery { background: #4a5cab; }
+.stagebar__segment--evaluation { background: #5b73d4; }
+.stagebar__segment--security_and_legal { background: #6f8bf0; }
+.stagebar__segment--negotiation { background: #8aa5ff; }
+
+.stage-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stage-legend__item {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.stage-legend__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.stage-legend__label {
+  color: var(--text);
+}
+
+.stage-legend__count,
+.stage-legend__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
+.stage-legend__value {
+  min-width: 90px;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+/* --- Shared list rows --- */
+
+.dash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.dash-row:last-child {
+  border-bottom: none;
+}
+
+.dash-row__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dash-row__title {
+  color: var(--text-h);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-row__sub {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+
+.dash-more {
+  padding-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.dash-defs {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-4);
+}

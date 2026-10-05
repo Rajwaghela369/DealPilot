@@ -636,11 +636,11 @@ to tell which did. Do not label these values as either until it exists.
 
 ### Tasks
 
-- [ ] **8.1 Stakeholder table** with role, influence, sentiment.
-- [ ] **8.2 Add via contact picker** (phase 1).
-- [ ] **8.3 Edit and remove.**
-- [ ] **8.4 Participants section** with attendance counts.
-- [ ] **8.5 "Add as stakeholder"** inline from a participant row.
+- [x] **8.1 Stakeholder table** with role, influence, sentiment.
+- [x] **8.2 Add via contact picker** (phase 1).
+- [x] **8.3 Edit and remove.**
+- [x] **8.4 Participants section** with attendance counts.
+- [x] **8.5 "Add as stakeholder"** inline from a participant row.
 
 ---
 
@@ -676,13 +676,25 @@ Two options, and the choice belongs to whoever starts this phase:
 `?include_quarantined` is also missing, so quarantined facts cannot be shown
 at all.
 
+**Decided: option 1, read-only, labelled as a view.** The page says so at the
+top rather than implying a queue exists. It also states that `contradicted`
+and `unsupported` facts are filtered out server-side and cannot be requested,
+because a list that silently omits the facts most worth doubting would be the
+most misleading version of this screen.
+
+**Why 9.5 is not theoretical.** Measured against the seeded corpus: all 43
+facts carry `confidence` **exactly 1.00**, and **every `verdict` is null**. So
+rendering confidence as a verdict would present 43 entirely unvalidated claims
+as uniformly certain. The page shows the verdict (as "Not validated") first
+and labels confidence as the generator's self-report, after it.
+
 ### Tasks
 
-- [ ] **9.1 Decide read-only vs. add the endpoint.** Do not start the UI first.
-- [ ] **9.2 Fact table** with type and status filters.
-- [ ] **9.3 Evidence button** (phase 5).
-- [ ] **9.4 Render `superseded` beside what replaced it,** not hidden.
-- [ ] **9.5 Do not render `confidence` as a verdict.** See 5.6.
+- [x] **9.1 Decide read-only vs. add the endpoint.** Do not start the UI first.
+- [x] **9.2 Fact table** with type and status filters.
+- [x] **9.3 Evidence button** (phase 5).
+- [x] **9.4 Render `superseded` beside what replaced it,** not hidden.
+- [x] **9.5 Do not render `confidence` as a verdict.** See 5.6.
 
 ---
 
@@ -724,22 +736,34 @@ this is the normal path, not an edge case.
 `scope` is required and must agree with `deal_id` -- deal scope requires one,
 global scope forbids it, and a mismatch is a 422.
 
+Verified end to end against the running provider: a real turn produced 15
+`delta` events, a `done` carrying a `message_id` that resolves to a persisted
+row, and the user turn stored alongside it. A scope/`deal_id` mismatch is a
+422, confirmed by going around the typed helper.
+
+**A chat citation resolves by `chunk_id`, not through the claim endpoints.**
+`claim_evidence` is keyed on stored claims and a chat answer is not one, so
+the citation drawer here wraps `ChunkQuote` directly rather than
+`/risks/{id}/evidence`. The adapter sets `verification_status` to null, which
+renders as "not re-checked" -- accurate, because nothing has re-verified a
+chat span.
+
 **Pending backend.** `chat_messages` is ordered by `created_at` alone, which is
 non-deterministic for rows sharing a timestamp. Two messages can swap order
 between reads.
 
 ### Tasks
 
-- [ ] **10.1 Session list + create,** with the `scope` rule encoded so a
+- [x] **10.1 Session list + create,** with the `scope` rule encoded so a
       mismatch cannot be sent.
-- [ ] **10.2 SSE consumption.** `fetch` + `ReadableStream`, not `EventSource` --
+- [x] **10.2 SSE consumption.** `fetch` + `ReadableStream`, not `EventSource` --
       this is a POST and `EventSource` cannot do POST.
-- [ ] **10.3 Handle `error` inside a 200.** Render it in the thread.
-- [ ] **10.4 Append on `done` using `message_id`;** reconcile with the
+- [x] **10.3 Handle `error` inside a 200.** Render it in the thread.
+- [x] **10.4 Append on `done` using `message_id`;** reconcile with the
       optimistic bubble.
-- [ ] **10.5 Citation handles** -> evidence drawer (phase 5).
-- [ ] **10.6 Rename and delete sessions.**
-- [ ] **10.7 Disable the composer when `ai-status` says disabled,** rather than
+- [x] **10.5 Citation handles** -> evidence drawer (phase 5).
+- [x] **10.6 Rename and delete sessions.**
+- [x] **10.7 Disable the composer when `ai-status` says disabled,** rather than
       letting every message fail.
 
 ---
@@ -769,11 +793,18 @@ DELETE /tasks/{task_id}
 
 ### Tasks
 
-- [ ] **11.1 Table + pager + filters.**
-- [ ] **11.2 Create and edit.**
-- [ ] **11.3 Complete inline.**
-- [ ] **11.4 Link to the originating deal.**
-- [ ] **11.5 Show provenance** where a task came from a recommendation.
+- [x] **11.1 Table + pager + filters.**
+- [x] **11.2 Create and edit.**
+- [x] **11.3 Complete inline.**
+- [x] **11.4 Link to the originating deal.**
+- [x] **11.5 Show provenance** where a task came from a recommendation.
+      **Partly blocked, and shipped honestly.** `tasks` has no
+      `source_recommendation_id`; the link lives on
+      `recommendations.created_task_id` and no endpoint queries it in reverse.
+      `TaskDetail.source_fact_id` is the Gate 3 promotion link, a different
+      thing. So the row shows `origin` -- "from a suggestion" vs "added by
+      hand", which is true and is the question that matters -- and does not
+      invent a link to the specific recommendation.
 
 ---
 
@@ -802,14 +833,19 @@ client-side arithmetic over list responses, which is fine at MVP volume and
 will not be at scale. If the dashboard needs more than four numbers, ask for an
 endpoint instead of fetching more pages.
 
+Built with that limit **explicit rather than implied**: one `?limit=200`
+request, and when `total` exceeds it the page says so and names the fix. Counts
+drawn from a partial window would be quietly wrong, which is worse than not
+showing them.
+
 ### Tasks
 
-- [ ] **12.1 Pipeline-by-stage** from a filtered `/deals`.
-- [ ] **12.2 "Needs attention"** -- stalled, close date at risk.
-- [ ] **12.3 Tasks due soon.**
-- [ ] **12.4 AI status card** -- worker running, provider reachable, queue
+- [x] **12.1 Pipeline-by-stage** from a filtered `/deals`.
+- [x] **12.2 "Needs attention"** -- stalled, close date at risk.
+- [x] **12.3 Tasks due soon.**
+- [x] **12.4 AI status card** -- worker running, provider reachable, queue
       depth.
-- [ ] **12.5 Replace the placeholder** `MainLayout` content.
+- [x] **12.5 Replace the placeholder** `MainLayout` content.
 
 ---
 

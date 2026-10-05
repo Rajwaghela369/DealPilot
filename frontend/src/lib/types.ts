@@ -851,3 +851,277 @@ export interface AttendeeFilters {
   is_internal?: boolean
   attended?: boolean
 }
+
+// ------------------------------------------------------------ People (p8)
+
+export const BUYING_ROLES = [
+  'champion',
+  'economic_buyer',
+  'technical',
+  'blocker',
+  'influencer',
+  'unknown',
+] as const
+export type BuyingRole = (typeof BUYING_ROLES)[number]
+
+export const INFLUENCE_LEVELS = ['low', 'medium', 'high', 'unknown'] as const
+export type InfluenceLevel = (typeof INFLUENCE_LEVELS)[number]
+
+/** A `deal_contacts` row joined to the person it points at. */
+export interface DealStakeholder {
+  contact_id: string
+  first_name: string
+  last_name: string
+  email: string | null
+  title: string | null
+  phone: string | null
+  /**
+   * Native enums, so closed unions are safe.
+   *
+   * **No `origin` column exists on `deal_contacts`,** so once both a human and
+   * the analyzer can write these there is no way to tell which did. The UI must
+   * not label them as either (plan, phase 8 Pending backend).
+   */
+  buying_role: BuyingRole
+  influence: InfluenceLevel
+  sentiment: Sentiment
+  is_primary: boolean
+  notes: string | null
+}
+
+export interface StakeholderWrite {
+  buying_role?: BuyingRole
+  influence?: InfluenceLevel
+  sentiment?: Sentiment
+  is_primary?: boolean
+  notes?: string | null
+}
+
+export interface StakeholderCreate extends StakeholderWrite {
+  contact_id: string
+}
+
+/**
+ * One person rolled up across every meeting on the deal.
+ *
+ * Not the same list as stakeholders, and the difference is the whole point:
+ * `meetings_attended > 0` with `is_stakeholder: false` means somebody is
+ * influencing this deal and nobody is tracking them; `is_stakeholder: true`
+ * with `meetings_attended: 0` is a tracked person who has never turned up,
+ * which for an economic buyer *is* the `no_economic_buyer` risk.
+ */
+export interface DealParticipant {
+  contact_id: string | null
+  name: string
+  email: string | null
+  title: string | null
+  is_internal: boolean
+  resolved: boolean
+  is_stakeholder: boolean
+  buying_role: string | null
+  influence: string | null
+  meetings_attended: number
+  last_seen_at: string | null
+}
+
+export interface ParticipantFilters {
+  is_stakeholder?: boolean
+  resolved?: boolean
+  /** Defaults to false server-side: your own people are not participants. */
+  is_internal?: boolean
+}
+
+// ------------------------------------------------------------- Facts (p9)
+
+export const FACT_TYPES = [
+  'requirement',
+  'objection',
+  'stakeholder',
+  'commitment',
+  'deadline',
+  'budget',
+  'competitor',
+  'decision_criteria',
+] as const
+export type FactType = (typeof FACT_TYPES)[number]
+
+export const FACT_STATUSES = ['pending', 'accepted', 'rejected', 'superseded'] as const
+export type FactStatus = (typeof FACT_STATUSES)[number]
+
+/**
+ * Gate 1's independent check: does the quoted span support the claim?
+ *
+ * This is a **verdict**, and it is the thing `confidence` must never be
+ * rendered as (plan 5.6, 9.5). `null` means not yet validated, which is a
+ * distinct state and is explicitly not defaulted to a pass.
+ */
+export const VERDICTS = ['supported', 'partial', 'contradicted', 'unsupported'] as const
+export type Verdict = (typeof VERDICTS)[number]
+
+export interface FactEvidence {
+  evidence_id: string
+  snippet: string
+  speaker: string | null
+  chunk_id: string | null
+  char_start: number | null
+  char_end: number | null
+  verification_status: VerificationStatus
+}
+
+export interface FactListItem {
+  id: string
+  /** text + CHECK: churns as prompts are tuned. */
+  fact_type: string
+  content: string
+  payload: Record<string, unknown> | null
+  status: FactStatus
+  /**
+   * The generator's self-report, as a number.
+   *
+   * Weak and poorly calibrated -- the schema docstring records that this
+   * corpus came back at exactly 1.00 across *every* fact, which is the
+   * clearest possible demonstration that it carries no information. Shown
+   * beside `verdict`, never as one.
+   */
+  confidence: number | null
+  verdict: Verdict | null
+  meeting_id: string | null
+  document_id: string | null
+  extracted_at: string | null
+  /** Inline, so the table needs no second call. A fact with none cannot exist. */
+  evidence: FactEvidence[]
+}
+
+export interface FactFilters {
+  fact_type?: FactType[]
+  status?: FactStatus[]
+}
+
+// ------------------------------------------------------------- Tasks (p11)
+
+export const TASK_STATUSES = ['open', 'done', 'cancelled'] as const
+export type TaskStatus = (typeof TASK_STATUSES)[number]
+
+export interface TaskListItem {
+  id: string
+  deal_id: string
+  /** Carried because this list is cross-deal and a title alone is not actionable. */
+  deal_name: string
+  account_id: string
+  account_name: string
+  title: string
+  due_date: string | null
+  status: TaskStatus
+  priority: Priority
+  /** `ai` means it arrived by promotion, not by someone typing it. */
+  origin: Origin
+  /** Open and past due. Computed per request, never stored. */
+  is_overdue: boolean
+  completed_at: string | null
+  created_at: string
+}
+
+export interface TaskDetail extends TaskListItem {
+  description: string | null
+  /** Set only by the Gate 3 promotion path. Read-only. */
+  source_fact_id: string | null
+  updated_at: string
+}
+
+export interface TaskCreate {
+  deal_id: string
+  title: string
+  description?: string | null
+  due_date?: string | null
+  priority?: Priority
+  status?: TaskStatus
+}
+
+export interface TaskUpdate {
+  title?: string
+  description?: string | null
+  due_date?: string | null
+  priority?: Priority
+  status?: TaskStatus
+}
+
+export const TASK_SORT_KEYS = [
+  'due_date',
+  'priority',
+  'status',
+  'title',
+  'deal_name',
+  'created_at',
+] as const
+export type TaskSortKey = (typeof TASK_SORT_KEYS)[number]
+export type TaskSort = TaskSortKey | `-${TaskSortKey}`
+
+export interface TaskFilters {
+  limit?: number
+  offset?: number
+  deal_id?: string
+  account_id?: string
+  status?: TaskStatus[]
+  priority?: Priority[]
+  origin?: Origin
+  open?: boolean
+  /** A task with no due date is never overdue -- undated is unscheduled. */
+  overdue?: boolean
+  due_before?: string
+  due_after?: string
+  has_due_date?: boolean
+  q?: string
+  sort?: TaskSort
+}
+
+// -------------------------------------------------------------- Chat (p10)
+
+export type ChatScope = 'deal' | 'global'
+
+export interface ChatSession {
+  id: string
+  scope: ChatScope
+  deal_id: string | null
+  title: string | null
+  last_message_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatCitation {
+  /** The handle the answer text refers to, e.g. `citation-1`. */
+  handle: string
+  source_kind: SourceKind
+  snippet: string
+  document_id: string | null
+  chunk_id: string | null
+  record_ref: RecordRef | null
+  char_start: number | null
+  char_end: number | null
+}
+
+export interface ChatMessage {
+  id: string
+  session_id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  status: string
+  model: string | null
+  token_usage: Record<string, unknown> | null
+  latency_ms: number | null
+  created_at: string
+  citations: ChatCitation[]
+}
+
+/**
+ * The three SSE event shapes, verified against `app/ai/chat.py`.
+ *
+ * **A provider failure arrives inside an HTTP 200.** The status code says
+ * nothing; only the stream does. Groq returns 503 under load often enough that
+ * this is the normal path rather than an edge case, so `error` is a first-class
+ * outcome and not an exception.
+ */
+export type ChatStreamEvent =
+  | { type: 'delta'; content: string }
+  | { type: 'error'; detail: string }
+  | { type: 'done'; message_id: string }
