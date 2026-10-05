@@ -394,3 +394,163 @@
 .risk-card__seen {
   font-size: var(--text-xs);
 }
+
+/* ------------------------------------------- Recommendation cards (p6) */
+
+.rec-list .rec-card {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  border-left: none;
+  margin: 0;
+}
+
+.rec-list .rec-card:last-child {
+  border-bottom: none;
+}
+
+.rec-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border-left: 2px solid var(--accent-border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface);
+}
+
+/* A decided suggestion stays visible -- what was suggested, accepted and
+ * dismissed is the only honest measure of whether the advice is any good --
+ * but stops competing with the ones still awaiting an answer. */
+.rec-card.is-decided {
+  opacity: 0.72;
+}
+
+/* `correct_record` is a claim about a row, not an action. The left border
+ * changes colour so it does not read as one more thing to do. */
+.rec-card.is-correction {
+  border-left-color: var(--info-border);
+  background: var(--info-bg);
+}
+
+.rec-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.rec-card__title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.rec-card__correction {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rec-card__body {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rec-card__rationale {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.rec-card__decision {
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-strong);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.rec-card__note {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.rec-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+/* ------------------------------ Reason / status radio lists (p6) */
+
+.dismiss__intro {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.dismiss__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.dismiss__reasons legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+.dismiss__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--ease), background var(--ease);
+}
+
+.dismiss__reason:hover {
+  border-color: var(--accent-border);
+  background: var(--surface);
+}
+
+.dismiss__reason input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.dismiss__reason:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.dismiss__reason-name {
+  display: block;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.dismiss__reason-current {
+  font-weight: 400;
+  font-size: var(--text-xs);
+}
+
+.dismiss__reason-help {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-dim);
+}

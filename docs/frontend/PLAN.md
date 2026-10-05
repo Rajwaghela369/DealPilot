@@ -483,22 +483,51 @@ POST /deals/{id}/recommendations/{rec_id}/dismiss    -> needs a reason
 GET  /deals/{id}/recommendations/{rec_id}/evidence
 ```
 
+**`risk_key` is not exposed.** The Features note above says a model-named
+risk (`risk_type = 'other'`) carries a `risk_key` so it renders like any
+other. The column exists, but no response schema returns it -- so the
+model-written `title` is what identifies such a risk, which reads fine. The
+card labels the type "model-named" rather than "Other".
+
+**Response enums are typed by how stable they are,** following the schema's
+own storage choice (`app/models/enums.py`): native Postgres enums for sets
+that will not churn (`severity`, `priority`, `risk_status`,
+`recommendation_status`) get closed TypeScript unions, while the
+`text + CHECK` vocabularies that *will* churn as prompts are tuned
+(`risk_type`, `action_type`, `dismissal_reason`) stay `string` on responses. A
+new `action_type` should render as an unknown-but-harmless label, not break
+the build. Request bodies use the closed unions either way, mirroring the
+backend typing its request models with the enums.
+
+**Both 409s are real and neither is retryable.** Accepting twice answers 409
+naming the task it already created ("edit that task rather than accepting
+again"); dismissing something already accepted answers 409 saying to cancel
+that task instead. Shown verbatim in the dialog with the submit button
+removed -- offering "Accept" under a message saying it is already accepted
+would be absurd.
+
 **Pending backend.** None.
 
 ### Tasks
 
-- [ ] **6.1 Risk list,** severity-ordered, with evidence buttons.
-- [ ] **6.2 Recommendation cards** with Accept / Dismiss.
-- [ ] **6.3 Dismiss dialog** carrying `dismissal_reason`
-      (`already_handled` | `not_relevant` | `wrong`). The value feeds the
+- [x] **6.1 Risk list,** severity-ordered, with evidence buttons.
+- [x] **6.2 Recommendation cards** with Accept / Dismiss.
+- [x] **6.3 Dismiss dialog** carrying `dismissal_reason`. The value feeds the
       detector's suppression logic, so it is a real input and not telemetry.
-- [ ] **6.4 Accept** -- invalidate both the recommendation list and
+      **There are five reasons, not three:** `already_handled` |
+      `not_relevant` | `wrong` | `bad_timing` | `other`, all accepted by the
+      API (verified live). Offering only the first three would push "revisit
+      after the security review" into `not_relevant`, which asserts the
+      opposite of what it means -- and since these counts drive suppression,
+      that misinforms the detector rather than just mislabelling a row. No
+      reason is preselected: a default is a reason nobody chose.
+- [x] **6.4 Accept** -- invalidate both the recommendation list and
       `['tasks']`, since accepting writes a task.
-- [ ] **6.5 Risk status edit** via `PATCH`.
-- [ ] **6.6 `correct_record` reads differently.** Every other `action_type`
+- [x] **6.5 Risk status edit** via `PATCH`.
+- [x] **6.6 `correct_record` reads differently.** Every other `action_type`
       names an action to take; this one is a claim that a row is wrong. Render
       it as "review this record", not as a to-do.
-- [ ] **6.7 Empty state that is not a failure.** No risks on a healthy deal is
+- [x] **6.7 Empty state that is not a failure.** No risks on a healthy deal is
       good news, and the deterministic detector produces risks with no model
       calls at all -- so an empty list never means "AI is off".
 

@@ -47,8 +47,13 @@ import type {
   DocumentSourceType,
   EvidenceItem,
   Page,
+  RecommendationAccept,
+  RecommendationDetail,
+  RecommendationDismiss,
+  RecommendationFilters,
   RiskFilters,
   RiskListItem,
+  RiskUpdate,
   StageHistoryEntry,
 } from './types'
 
@@ -110,6 +115,13 @@ export const keys = {
     filters
       ? (['deals', dealId, 'risks', filters] as const)
       : (['deals', dealId, 'risks'] as const),
+  recommendations: (dealId: string, filters?: RecommendationFilters) =>
+    filters
+      ? (['deals', dealId, 'recommendations', filters] as const)
+      : (['deals', dealId, 'recommendations'] as const),
+
+  /** Phase 11's list. Named here because accepting a recommendation writes one. */
+  tasks: () => ['tasks'] as const,
 } as const
 
 // ------------------------------------------------------------------ System
@@ -296,4 +308,51 @@ export const risks = {
   /** A bare array; at most ~10 rows, one per risk type. Severity-ordered. */
   list: (dealId: string, filters: RiskFilters = {}) =>
     apiJson<RiskListItem[]>(`/deals/${dealId}/risks`, { query: filters }),
+
+  /**
+   * Record the human decision. Only `status` is writable.
+   *
+   * The detector owns `risk_type`, `title`, `description`, `severity` and
+   * `confidence` -- editing what it asserted would destroy the record of what
+   * it asserted. If a risk is wrong, the honest move is to dismiss it, which
+   * is why there is no edit form on a risk card.
+   */
+  updateStatus: (dealId: string, riskId: string, body: RiskUpdate) =>
+    apiJson<RiskListItem>(`/deals/${dealId}/risks/${riskId}`, { method: 'PATCH', body }),
+}
+
+// ------------------------------------------------------- Recommendations
+
+export const recommendations = {
+  /** A bare array, newest first. */
+  list: (dealId: string, filters: RecommendationFilters = {}) =>
+    apiJson<RecommendationDetail[]>(`/deals/${dealId}/recommendations`, { query: filters }),
+
+  /**
+   * Accept: writes a task and points the recommendation at it.
+   *
+   * Two 409s, both of which name what already happened rather than just
+   * refusing: already accepted (gives the task id, "edit that task rather
+   * than accepting again") and already dismissed ("nothing re-opens a
+   * dismissed suggestion").
+   */
+  accept: (dealId: string, recId: string, body: RecommendationAccept) =>
+    apiJson<RecommendationDetail>(`/deals/${dealId}/recommendations/${recId}/accept`, {
+      method: 'POST',
+      body,
+    }),
+
+  /**
+   * Dismiss: records that a human said no, and why.
+   *
+   * Remembered rather than deleted, for two reasons the UI should respect:
+   * the detector must not re-suggest it next run, and the reason distribution
+   * is the only signal that says whether the advice is any good. 409 if it
+   * was already accepted.
+   */
+  dismiss: (dealId: string, recId: string, body: RecommendationDismiss) =>
+    apiJson<RecommendationDetail>(`/deals/${dealId}/recommendations/${recId}/dismiss`, {
+      method: 'POST',
+      body,
+    }),
 }

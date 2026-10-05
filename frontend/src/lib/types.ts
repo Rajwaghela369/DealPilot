@@ -465,11 +465,6 @@ export interface EvidenceItem {
 export type ClaimType = 'fact' | 'commitment' | 'risk' | 'recommendation' | 'chat_message'
 
 // ------------------------------------------------------------------- Risks
-//
-// Phase 6 owns this screen. The subset here is what phase 5 needs to give the
-// evidence drawer a call site: enough to list risks read-only and open their
-// citations. The decision controls -- accept, dismiss, status change -- are
-// phase 6 and are deliberately absent.
 
 export const RISK_STATUSES = ['open', 'mitigating', 'resolved', 'dismissed'] as const
 export type RiskStatus = (typeof RISK_STATUSES)[number]
@@ -480,16 +475,36 @@ export type Severity = (typeof SEVERITIES)[number]
 /** Who authored a row. Without it, "how much of this did the model write?". */
 export type Origin = 'user' | 'ai'
 
+/**
+ * How response enums are typed here, and why it is not uniform.
+ *
+ * `app/models/enums.py` picks storage per set, and the choice says which
+ * vocabularies are expected to move: a **native Postgres enum** for sets that
+ * will not churn (`severity`, `priority`, `risk_status`,
+ * `recommendation_status`), and **text + CHECK** for the ones that will as
+ * prompts are tuned (`risk_type`, `action_type`, `dismissal_reason`) --
+ * because adding a value there is a one-line CHECK swap rather than an
+ * ALTER TYPE.
+ *
+ * So the stable sets get closed unions, and the churning ones stay `string`
+ * on responses. A new `action_type` shipped by the backend should render as an
+ * unknown-but-harmless label, not break the build of a client that is
+ * otherwise fine -- `humanise()` handles any slug. Request bodies use the
+ * closed unions regardless, which mirrors the backend typing its own request
+ * models with the enums so a bad value inbound is a 422.
+ */
 export interface RecommendationSummary {
   id: string
   title: string
+  /** text + CHECK: may gain values. Compare with `isCorrectRecord`. */
   action_type: string
-  priority: string
+  priority: Priority
   rationale: string | null
-  status: string
+  status: RecommendationStatus
   /** Derived from the task's status, never a stored copy of it. */
   is_completed: boolean
   created_task_id: string | null
+  /** text + CHECK: may gain values. */
   dismissal_reason: string | null
 }
 
@@ -525,4 +540,127 @@ export interface RiskFilters {
   severity?: Severity[]
   /** `open` collapses `open` + `mitigating`, which is what the panel means. */
   open?: boolean
+}
+
+// ------------------------------------------- Recommendations (phase 6)
+
+export const RECOMMENDATION_STATUSES = [
+  'suggested',
+  'accepted',
+  'dismissed',
+  'completed',
+] as const
+export type RecommendationStatus = (typeof RECOMMENDATION_STATUSES)[number]
+
+export const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
+export type Priority = (typeof PRIORITIES)[number]
+
+/**
+ * What a recommendation asks for.
+ *
+ * `correct_record` is the odd one out, and task 6.6 turns on it: every other
+ * value names an action to take, while this one is a claim that a row in our
+ * own database is wrong. The backend gave it its own value rather than filing
+ * it under the nearest action precisely so the action-type distribution stays
+ * meaningful -- so the UI must not render it as a to-do either.
+ */
+export const ACTION_TYPES = [
+  'schedule_meeting',
+  'send_document',
+  'follow_up_email',
+  'engage_stakeholder',
+  'update_close_date',
+  'address_objection',
+  'internal_escalation',
+  'correct_record',
+] as const
+export type ActionType = (typeof ACTION_TYPES)[number]
+
+/** True for the one action type that is a claim rather than a task. */
+export function isCorrectRecord(actionType: string): boolean {
+  return actionType === 'correct_record'
+}
+
+/**
+ * Why a human said no.
+ *
+ * **Five values, not the three the plan lists.** `bad_timing` and `other` are
+ * real members of `DismissalReason` and both are accepted by the API
+ * (verified live). Omitting them would push "revisit after the security
+ * review" into `not_relevant`, which is the opposite of what it means -- and
+ * these counts are a real input to the detector's suppression logic, not
+ * telemetry, so a miscategorised dismissal actively misinforms it.
+ */
+export const DISMISSAL_REASONS = [
+  'already_handled',
+  'not_relevant',
+  'wrong',
+  'bad_timing',
+  'other',
+] as const
+export type DismissalReason = (typeof DISMISSAL_REASONS)[number]
+
+export interface RecommendationDetail {
+  id: string
+  deal_id: string
+  /** Null for a *proactive* recommendation with no risk to nest under. */
+  source_risk_id: string | null
+  title: string
+  description: string | null
+  rationale: string | null
+  /** text + CHECK: may gain values. Compare with `isCorrectRecord`. */
+  action_type: string
+  priority: Priority
+  /** Self-reported. Not a verdict -- see the note on `RiskListItem`. */
+  confidence: string | null
+  status: RecommendationStatus
+  origin: Origin
+  /** Derived from the task's status, never a stored copy of it. */
+  is_completed: boolean
+  created_task_id: string | null
+  /** text + CHECK: may gain values. */
+  dismissal_reason: string | null
+  dismissal_note: string | null
+  generated_at: string
+  decided_at: string | null
+}
+
+/**
+ * The task this becomes, as the user edited the prefilled form.
+ *
+ * `due_date` is **required** even though `tasks.due_date` is nullable: the
+ * point of accepting is to commit to *when*, and undated committed work is
+ * how a task list becomes noise. Omitting it is a 422 naming the field
+ * (verified live). `title`, `description` and `priority` default to the
+ * recommendation's own values when omitted.
+ */
+export interface RecommendationAccept {
+  title?: string
+  description?: string | null
+  due_date: string
+  priority?: Priority
+}
+
+export interface RecommendationDismiss {
+  reason: DismissalReason
+  /** The detail a count cannot carry. */
+  note?: string | null
+}
+
+/** Only the human decision is writable; the claim belongs to the detector. */
+export interface RiskUpdate {
+  status: RiskStatus
+  /** Free text on the decision, not on the claim. */
+  note?: string | null
+}
+
+export interface RecommendationFilters {
+  status?: RecommendationStatus[]
+  action_type?: ActionType[]
+  /**
+   * `true` lists only recommendations with no `source_risk_id` -- the
+   * proactive ones, which the risk panel structurally cannot show because
+   * they nest under nothing.
+   */
+  orphaned?: boolean
 }
