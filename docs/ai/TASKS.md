@@ -4,17 +4,35 @@ Scope: **the model layer only.** Design reference: `README.md` in this
 directory. Schema reference: `docs/schema/README.md`. Existing migration head:
 `0009`.
 
-**Status: Phases 0-6 complete; Phase 7 built, its live shadow run outstanding.**
-**84 tests pass, and the suite is provably offline.** All thirteen pipeline
-stages are implemented — `stage_registry.STAGES` has no `_todo` left — and the
-worker runs the graph.
+**Status: Phases 0-10 complete.** All thirteen pipeline stages are implemented
+— `stage_registry.STAGES` has no `_todo` left — the worker runs the graph, and
+the suite is provably offline.
 
-Migrations: head at `0013`. `0010_pg_trgm`, `0011_meeting_analysis_origin`,
-`0012_detector_provenance`, `0013_open_risk_taxonomy`, all round-tripped.
+Migrations: head at `0016`. `0010_pg_trgm`, `0011_meeting_analysis_origin`,
+`0012_detector_provenance`, `0013_open_risk_taxonomy`,
+`0014_analysis_triggers`, `0015_commitment_correction`, all round-tripped.
+`0016_fact_content_trgm` adds the GIN trigram index supersession selects
+against -- see *Found during implementation*.
 
-Open: **7.4's live shadow run** (a sizing bug found while running it, below),
-**7.5's writes** (gated on 7.4), and **1.5's three-way model comparison**.
-Task 0.9 was declined, not deferred.
+**Phase 11: 11.1–11.9 complete, 11.10 and 11.11 open.** Every capability item
+has shipped; what remains is the two measurement tasks, and they are open for a
+reason that is itself the finding — **the fixture corpus cannot resolve the
+effects they were written to measure.** Five runs of one unchanged prompt span
+f1 0.51–0.58, so a one-run prompt or model comparison ranks noise. Both now
+have a working harness (`--repeat N`), a stated cost (~25 min and ~40 min at
+8,000 TPM), and a recorded reason for not having been run. See each task and
+*Found during implementation*.
+
+Task 0.9 was declined, not deferred, and re-confirmed 2026-10-05. Task 1.5 is
+not separately open: 11.11 **is** its outstanding half, and closing 11.11
+closes it.
+
+Corrections to an earlier version of this header: 7.4's shadow run **was** run
+and recorded (recall 1.00, Jaccard 0.67 over two runs), and 7.5's writes
+shipped with it. Task 11.9 enlarged that sample to n=10 and the figure is
+**0.882 mean pairwise Jaccard with zero verdict flicker over twenty runs**;
+7.4's 0.67 was a two-run artefact. Getting there uncovered a defect that was
+failing 3 detect runs in 10, now fixed.
 
 The payoff from Phase 2 is visible: with `meeting_attendees` populated, the
 deterministic detector now returns three real cited risks on the fixture deal
@@ -45,6 +63,7 @@ Phase 9 which depend only on Phases 0–5:
 8  Meeting briefs ....... meeting_briefs
 9  Chat ................. chat_sessions, chat_messages
 10 Triggers ............. event invalidation + the nightly sweep    needs 0013
+11 Closing the loop .... last_activity_at, proposals, read surfaces (needs 0015)
 ```
 
 Phase 10 is the exception to the order above: **10.1–10.4 can land as soon as
@@ -126,9 +145,12 @@ No model calls. Everything here is testable without an API key.
       *Done when:* firing 50 extraction calls at once completes without a 429
       reaching the caller, and the concurrency ceiling is configurable.
 
-- [ ] **0.9 Resolve the Python version.** ~~Rebuild the venv on 3.12.~~
+- [x] **0.9 Resolve the Python version.** ~~Rebuild the venv on 3.12.~~
       **Declined — staying on 3.9, deps left unpinned.** Recorded because it
       has a standing consequence, not because it is still planned.
+      Re-confirmed 2026-10-05: staying on the current version is the
+      preference, so this is settled rather than pending. Checked off to stop
+      it reading as outstanding work; the consequences below still apply.
 
       `langchain`, `langchain-core`, `langchain-groq` and `langgraph` all
       require `>=3.10`, so from one unpinned `requirements.txt` pip resolves
@@ -529,6 +551,9 @@ nothing populates from transcripts.
       `superseded`, link the new evidence, **keep both**.
       *Done when:* the fixture's contradicting fact supersedes its predecessor
       and neither row is deleted.
+      The comparison set was `extracted_at DESC LIMIT 10`, which bounded
+      recall rather than cost; it is now chosen per new fact by trigram
+      similarity (`0016`). See *Found during implementation*.
 
 - [x] **6.3 Staleness (SQL).** Flag claims whose newest `evidence.occurred_at`
       predates `deals.last_activity_at`; write `stale` to
@@ -582,13 +607,19 @@ free labels and should not be skipped.
       and all three verdicts agreed across both runs. Worth re-measuring over
       more runs before trusting the figure.
 
-- [ ] **7.5 Turn on writes.** Stage D reconciliation in Python — upsert by
+- [x] **7.5 Turn on writes.** Stage D reconciliation in Python — upsert by
       `(deal_id, risk_type, risk_key)`, bump `last_seen_at`, never insert a
       duplicate, suppress anything inside a dismissal cooldown. Risk and its
       recommendation from the same call. Gate 0 and Gate 1 applied as in
       Phases 3–4.
       *Done when:* two consecutive runs on one deal leave one row per risk, and
       the six semantic types appear with surviving citations.
+      **Done** — proposals and recommendations now pass Gate 0 and the starved
+      Gate 1 before either row is written. Record evidence stores the literal
+      field value (not the dossier's explanatory rendering), accepted facts
+      contribute their original source spans, existing risks are bumped, and
+      the suggested recommendation is upserted with them. A database test pins
+      the two-run identity and verified-citation contract.
 
 - [x] **7.6 Severity policy.** Compute the band in Python for `stalled_stage`,
       `close_date_at_risk` and `missed_commitment` and clamp the model's
@@ -625,45 +656,66 @@ free labels and should not be skipped.
 
 ## Phase 8 — Meeting briefs
 
-- [ ] **8.1 Brief generator.** `app/ai/brief.py` — one `openai/gpt-oss-120b` call over
+- [x] **8.1 Brief generator.** `app/ai/brief.py` — one `openai/gpt-oss-120b` call over
       prefetched rows: deal, open risks, pending commitments, prior meeting
       summaries, stakeholder map. Structured into `objectives`, `key_risks`,
       `recommended_questions`, `context_summary`.
       *Done when:* a brief persists with `model` and `generated_at`.
 
-- [ ] **8.2 Regenerate only on `force`.** `UniqueConstraint(meeting_id)` already
+- [x] **8.2 Regenerate only on `force`.** `UniqueConstraint(meeting_id)` already
       enforces one per meeting.
       *Done when:* a second request returns the stored brief without a call.
+      **Done** — `POST .../meetings/{id}/brief` persists structured objectives,
+      risks, questions, context, model and timestamp; `GET` reads it. A second
+      generation returns the stored row, while `force=true` replaces it.
 
 ---
 
 ## Phase 9 — Chat
 
-- [ ] **9.1 Read-only tool set.** `app/ai/tools/` — the eight tools in
+- [x] **9.1 Read-only tool set.** `app/ai/tools/` — the eight tools in
       `README.md` §6, each returning content **plus evidence handles**.
       *Done when:* every tool result carries a `chunk_id` + offsets or a
       `record_ref`.
+      **Done** — eight `StructuredTool` wrappers return bounded JSON entries;
+      each entry has a generated evidence handle backed by either an exact
+      document chunk span or an allowlisted record field. There is no write
+      tool and no generic SQL surface.
 
-- [ ] **9.2 Deal scoping in Python.** When `chat_sessions.scope='deal'`, the
+- [x] **9.2 Deal scoping in Python.** When `chat_sessions.scope='deal'`, the
       `deal_id` comes from the session row, never from a model argument.
       *Done when:* a tool call naming another deal's id is refused.
+      **Done** — the registry is constructed with the session's immutable
+      `deal_id`; omitted ids inherit it and mismatched or malformed ids raise a
+      tool error before a query is constructed.
 
-- [ ] **9.3 The loop.** LangGraph's prebuilt ReAct agent, streaming, writing
+- [x] **9.3 The loop.** LangGraph's prebuilt ReAct agent, streaming, writing
       into a `chat_messages` row created with `status='streaming'` so a refresh
       mid-answer does not lose the turn.
       *Done when:* an interrupted stream leaves a recoverable row, and the
       turn's usage covers **every** model call the agent made, not just the
       first (task 3.8).
+      **Done** — the user and empty assistant rows commit before inference,
+      response deltas stream over SSE and checkpoint every 500 characters,
+      and failures retain partial content with `status='error'`. The
+      context-scoped usage callback accounts for every ReAct iteration.
 
-- [ ] **9.4 Citations.** Attach `claim_evidence` with
+- [x] **9.4 Citations.** Attach `claim_evidence` with
       `claim_type='chat_message'`, and run Gate 0 over the handles the answer
       actually used.
       *Done when:* an answer renders with clickable citations and an uncited
       assertion is visibly uncited.
+      **Done** — only inline `[eN]` handles actually used in the final answer
+      are attached, every link passes Gate 0, and handle-to-evidence identity
+      is retained in the message usage envelope for the read API. Text without
+      a matching inline handle remains visibly uncited.
 
-- [ ] **9.5 Session titles.** `openai/gpt-oss-20b` after the first turn,
+- [x] **9.5 Session titles.** `openai/gpt-oss-20b` after the first turn,
       fire-and-forget.
       *Done when:* `chat_sessions.title` is populated.
+      **Done** — a best-effort background task uses the cheap model and the
+      versioned `chat-title@1` structured prompt, then writes through its own
+      database session so it does not hold the streaming request open.
 
 ---
 
@@ -672,7 +724,7 @@ free labels and should not be skipped.
 Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
 **10.1–10.4 need only Phase 3; 10.5 needs Phase 7.**
 
-- [ ] **10.1 Migration `0014_analysis_triggers`.** `deals` +
+- [x] **10.1 Migration `0014_analysis_triggers`.** `deals` +
       `analysis_dirty_first_at`, `analysis_dirty_last_at`,
       `analysis_dirty_reason`, `analysis_swept_at`. Partial index on
       `(analysis_dirty_last_at) WHERE analysis_dirty_first_at IS NOT NULL`, and
@@ -680,8 +732,11 @@ Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
       `app/core/config.py`, not in the SQL.
       *Done when:* upgrade and downgrade both succeed and the poll queries in
       `README.md` §3 use an index.
+      **Done** — the four nullable timestamps/reason fields, partial dirty
+      index, and sweep index round-trip at head `0014`; both worker claims use
+      the indexed columns and `FOR UPDATE SKIP LOCKED`.
 
-- [ ] **10.2 Dirty marking in the service layer.** One helper —
+- [x] **10.2 Dirty marking in the service layer.** One helper —
       `services/analysis.py::mark_dirty(deal_id, reason)` — called from the
       writes in the "Which writes matter" table. Set `first_at` only if null,
       always push `last_at`. **Not** a Postgres trigger: `services/` is already
@@ -689,44 +744,377 @@ Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
       cannot see `origin`.
       *Done when:* changing a deal's stage marks it dirty, editing
       `deals.description` does not, and a unit test covers each row of the table.
+      **Done** — `services/analysis.py` owns the three tiers and the relevant
+      deal, meeting/attendee, stakeholder, commitment, task, transcript, and
+      delete write paths call it. Non-semantic edits do not.
 
-- [ ] **10.3 Loop guards.** Writes with `origin='ai'` and recommendation
+- [x] **10.3 Loop guards.** Writes with `origin='ai'` and recommendation
       dismissals never mark a deal dirty. Without this the detector
       re-triggers itself.
       *Done when:* a full AI detection run leaves the deal clean, and
       dismissing a recommendation does not enqueue anything.
+      **Done** — `mark_dirty` rejects AI origin centrally; detector writes and
+      recommendation dismissals have no trigger edge. Both are regression-tested.
 
-- [ ] **10.4 Tier 0 — eager re-verification.** On any update to a field named by
+- [x] **10.4 Tier 0 — eager re-verification.** On any update to a field named by
       some `evidence.record_ref`, re-resolve those links in the same
       transaction and write `value_drifted` where the value moved. No model.
       *Done when:* moving a deal from `discovery` to `negotiation` flips the
       citations on risks that cited the stage, in the same request.
+      **Done** — JSON record refs are selected by table/id/field and rechecked
+      before commit; the stage test observes `value_drifted` without a second
+      request. Deletes recheck their surviving record refs too.
 
-- [ ] **10.5 Tier 1 — eager deterministic detection.** Call `detect.py` from the
+- [x] **10.5 Tier 1 — eager deterministic detection.** Call `detect.py` from the
       service layer on the tier-1 events, not only from
       `POST /deals/{id}/analysis`. Cheap and exhaustive, so it cannot flicker.
       *Done when:* completing a meeting refreshes the four SQL risks without a
       separate API call.
+      **Done** — relevant writes synchronously refresh the deterministic floor.
+      The floor is now six rules: the original four plus `missed_commitment`
+      and `gone_quiet`.
 
-- [ ] **10.6 Tier 2 — the debounced AI pass.** Second poll query in the worker,
+- [x] **10.6 Tier 2 — the debounced AI pass.** Second poll query in the worker,
       using the debounce from `README.md` §3, with per-deal single-flight via an
       advisory lock or `FOR UPDATE SKIP LOCKED`. Clear the dirty columns and set
       `analysis_swept_at` on success.
       *Done when:* five field edits inside the debounce window produce exactly
       one AI run, and two concurrent triggers on one deal produce one run.
+      **Done** — quiet and maximum debounce windows are configurable; five
+      committed edits collapse into one run and concurrent claims skip the
+      locked deal. Success clears dirty state and stamps `analysis_swept_at`.
 
-- [ ] **10.7 The nightly sweep.** Third poll query —
+- [x] **10.7 The nightly sweep.** Third poll query —
       `analysis_swept_at IS NULL OR < now() - 24h` — on the same loop. No cron,
       no scheduler, no second container.
       *Done when:* a deal untouched for a day is re-analysed, and a
       time-only risk (`missed_commitment` on a commitment that just went
       overdue) is detected with no write having occurred.
+      **Done** — the worker claims one clean stale deal per pass. A focused
+      test advances only the clock and proves the sweep creates the overdue
+      commitment risk; `gone_quiet` is covered independently.
 
-- [ ] **10.8 Bulk-import suppression.** A settings flag or context manager that
+- [x] **10.8 Bulk-import suppression.** A settings flag or context manager that
       suppresses tier 2 marking, for the seeder and any bulk import. Tiers 0 and
       1 stay on — they are cheap and deterministic.
       *Done when:* importing 200 deals enqueues zero AI runs, and the nightly
       sweep picks them up instead.
+      **Done** — both a process setting and a nest-safe context manager suppress
+      only Tier 2. A 200-row regression test leaves dirty state empty; Tier 1
+      remains active and the ordinary sweep remains the catch-up mechanism.
+
+---
+
+## Phase 11 — Closing the loop
+
+Phases 0–10 compute more than the API exposes, and one stage produces a result
+with nowhere to put it. Nothing here is new capability; each item connects
+something that already works to something that can see it. **Single-user MVP —
+there is no `users` table and none is planned**, so ownership, per-user chat
+sessions and human-vs-human attribution are explicitly not questions here;
+`origin` already carries the only distinction that matters (`ai` vs `human`).
+
+Depends on Phases 0–10. 11.1 needs migration `0015`; the rest need none.
+
+- [x] **11.1 Migration `0015_commitment_correction_action`.**
+      `ActionType.CORRECT_RECORD` — a CHECK swap, since
+      `recommendations.action_type` is `String(50)` plus a `check_in` constraint
+      (`models/assertion.py:201,250`) precisely so this is cheap. Dropping a
+      CHECK by name needs raw SQL; see the trap in `docs/schema/TASKS.md`.
+      A **distinct** value rather than reusing `update_close_date`, for the
+      reason stage 7's docstring gives: the `dismissal_reason` and action-type
+      distributions are two of the few signals here that are not self-reported,
+      and filing a data correction under an action would corrupt both.
+      *Done when:* upgrade and downgrade both succeed, the seven existing action
+      types behave exactly as before, and a `correct_record` row inserts.
+      **Done** — head at `0015`, round-tripped. It carries more than the
+      planned CHECK swap: `source_commitment_id` plus a partial unique index
+      proved necessary, because the existing one-live-suggestion index is
+      keyed on `source_risk_id` and a correction has none — without it stage 7
+      would file a duplicate on every run. `SET NULL`, not `CASCADE`, since
+      `claim_evidence.claim_id` has no foreign key and a database-level
+      cascade would orphan links behind `services/claims.py`'s back.
+
+- [x] **11.2 Stage 7's proposals get a surface.** `app/ai/stages.py:460` runs
+      `reconcile.reconcile_commitments`, logs the result and **writes nothing** —
+      the gap its own docstring records. Write each proposal as a
+      `recommendation` with `action_type='correct_record'`, `status='suggested'`,
+      the commitment as its subject and the reconciliation rationale as its
+      description. It then flows through the existing
+      `GET /deals/{id}/recommendations` and the accept/dismiss routes with no new
+      endpoint. Accepting applies the commitment status change; dismissing feeds
+      the same cooldown policy as every other recommendation (7.10).
+      *Done when:* a commitment the transcript shows was satisfied produces a
+      dismissible proposal instead of a log line, accepting it moves the
+      commitment, and dismissing it suppresses re-proposal inside the cooldown.
+      **Done** — `stages._file_correction` upserts one `correct_record`
+      suggestion per commitment and `_link_fact_evidence` points it at the
+      facts' own evidence rows, re-running Gate 0 per link and dispatching on
+      `source_kind`. The commitment itself is never touched. Three tests:
+      filed-not-applied, second-run-updates-not-duplicates, and
+      already-satisfied-is-moot.
+
+- [x] **11.3 `GET /deals/{id}/analysis`.** Phase 10 added
+      `analysis_dirty_first_at`, `analysis_dirty_last_at`,
+      `analysis_dirty_reason` and `analysis_swept_at`, and nothing reads them —
+      only `POST /deals/{id}/analysis` exists, so the UI can trigger a run but
+      cannot say one is pending. Return the four columns plus a derived state
+      (`clean` / `queued` / `stale`) computed from the same debounce settings the
+      worker claims with, so the badge and the claim query cannot disagree.
+      *Done when:* five edits inside the debounce window read as one `queued`
+      state carrying a reason, and the state returns to `clean` with a fresh
+      `analysis_swept_at` after the worker runs.
+      **Done** — four states, not three: `debouncing` and `due` are kept apart
+      because one means "still collecting your edits" and the other "running
+      shortly", and collapsing them would make the quiet window look like
+      latency. A test asserts `due` and `worker._claim_dirty_deal` agree on
+      the same deal.
+
+- [x] **11.4 Expose `meetings.analysis_error`.** The column exists (`0011`) and
+      `stages.py:448` writes it; `MeetingAnalysis` does not return it, so the
+      Analyzer screen can say *that* a run degraded but not *why*. One field on
+      the schema and the projection.
+      *Done when:* a meeting with a failed degradable stage reports the stage
+      error through `GET .../meetings/{id}/analysis`.
+      **Done** — one field on `MeetingAnalysis` and `_analysis_payload`. The
+      column and its writer already existed; only the projection was missing.
+
+- [x] **11.5 `GET /system/ai-status`.** `client.py` already logs every run as
+      `ai.run task=… model=… version=… outcome=… in=… out=… ms=…` (task 0.7), so
+      per-run tracing exists — what is missing is *aggregate current state*:
+      governor token-bucket headroom, configured TPM/RPM, `ai_enabled`, the
+      count of dirty deals, the oldest unswept deal, and the last poll time.
+      Given that the configured TPM was once wrong by 31x and that a throttled
+      extraction window waits 77 seconds, this is the surface that makes both
+      legible without tailing the worker.
+      **Langfuse and LangSmith stay out** — see Out of scope. Structured logs
+      plus this endpoint are the whole observability story for the MVP, and the
+      tradeoff is deliberate: no per-run history, no trace tree.
+      *Done when:* a throttled run and a backed-up queue are both visible from
+      one request.
+      **Done** — config, queue depth and token budget. The budget is labelled
+      `api:pid-N` rather than presented as global: the governor is a
+      per-process singleton and the worker is a separate container, so the
+      API's bucket is not the one doing the work. A shared bucket would need
+      Redis.
+
+- [x] **11.6 Chat session lifecycle.** Three gaps in Phase 9, all small:
+      `PATCH /chat/{session_id}` to rename over the auto-generated title (9.5
+      writes it; nothing can correct it), `DELETE /chat/{session_id}`, and a
+      reaper for abandoned `status='streaming'` rows. 9.3 deliberately commits
+      the assistant row before inference so a refresh mid-answer is recoverable,
+      but nothing ever closes a row whose client never came back. The reaper is a
+      fourth poll query in `worker.py` — which is written to carry more than one
+      for exactly this reason (0.5) — finalizing rows older than a configurable
+      window as `status='error'` with their partial content retained.
+      *Done when:* a killed stream's row reaches a terminal status with no new
+      request, and a renamed session survives a later turn without being
+      re-titled.
+      **Done** — `PATCH` (rename over the auto-title), `DELETE` (clearing
+      `claim_evidence` through `services/claims.py` first, since `claim_id`
+      has no foreign key), and `reap_abandoned_streams` as the worker's fourth
+      poller. Reaped rows become `error`, not `complete`, keeping their
+      partial content: a truncated answer presented as finished is worse than
+      one that admits it.
+
+- [x] **11.7 Document upload refreshes the deterministic floor.**
+      `routes/deals/documents.py:218` calls `analysis.mark_dirty` directly rather
+      than `record_change`, so an upload marks the deal for the AI pass but skips
+      tiers 0 and 1. That matters for one rule specifically: the same request
+      advances `last_activity_at` (via `activity.touch_deal`, line 204), and
+      `gone_quiet` reads that column — so an upload that should clear a
+      `gone_quiet` risk leaves it standing until the nightly sweep. Route it
+      through `record_change` like the other sixteen call sites.
+      *Done when:* uploading a document to a quiet deal clears `gone_quiet` in
+      the same request.
+      **Done** — `record_change` instead of a bare `mark_dirty`, with no
+      table/row_id, since a new document changes no existing row and tier 0
+      has nothing to re-resolve.
+
+- [x] **11.8 `propose_task`, the one write tool.** `README.md` §6 allows exactly
+      this one, "after the read path is trusted" — which 9.1–9.4 establish:
+      every tool result carries an evidence handle, scoping comes from
+      `chat_sessions.deal_id` in Python, and answers are Gate 0 checked. The tool
+      creates a `recommendation` with `status='suggested'`, **never** a `task`:
+      the middle arrow in `risk → recommendation → [human] → task` is the
+      product. It takes the session's immutable `deal_id` like the eight read
+      tools and needs no new route — accept and dismiss already exist.
+      *Done when:* a chat turn can propose an action that appears in the
+      recommendations list, a foreign `deal_id` is refused before any write, and
+      no code path lets the agent create a `task` row.
+      **Done** — ninth tool, `status='suggested'`,
+      `detector_version='chat-propose-1'` so agent suggestions are
+      distinguishable from detector ones. Three tests:
+      creates-a-suggestion-not-a-task, refuses-another-deal, and a guard that
+      no second write tool has appeared. `test_chat.py`'s exact-set assertion
+      caught the contract change, which is what it is for.
+
+- [x] **11.9 A real stability sample for detection.** 7.4 recorded Jaccard 0.67
+      across **two** runs, with its own note saying the figure is worth
+      re-measuring. Run the detector ten times against the unchanged fixture
+      deal, write nothing, and record risk-key Jaccard plus — the number that
+      matters more — whether per-risk verdict flicker stays at zero. Stability is
+      the first thing to watch (`README.md` §7): a flickering risk panel reads as
+      brokenness regardless of precision.
+      *Done when:* a stability figure with a stated sample size is in this file,
+      and verdict flicker is quantified rather than assumed.
+      **Done**, and the headline is not the Jaccard. Ten runs against the
+      unchanged fixture deal, nothing written
+      (`tests/eval/run_stability_eval.py`, raw runs in
+      `tests/eval/recorded/stability-10.json`):
+
+      | | before the parse fix | after |
+      |---|---|---|
+      | runs that failed outright | **3** of 10 (0.30) | **0** of 10 |
+      | runs scored | 7 | 10 |
+      | mean pairwise Jaccard | 0.959 | **0.882** |
+      | unanimous Jaccard | 0.857 | **0.750** |
+      | **per-risk verdict flicker** | **0** | **0** |
+      | recall vs the six SQL rules | 1.00 every run | 1.00 every run |
+
+      **Take the right-hand column.** The first sample's 0.96 was survivorship
+      bias: the three runs it dropped are precisely the ones that disagreed,
+      so excluding them measured the detector's good days. Once the parse fix
+      (below) let those runs complete, the honest figure is **0.882 mean
+      pairwise / 0.750 unanimous over ten of ten runs** — still far better
+      than 7.4's 0.67, which was a two-run artefact, and arrived at without
+      discarding evidence.
+
+      Verdict flicker is **zero in both samples, twenty runs total**, which is
+      the condition the task set and the one `README.md` §7 cares about. No
+      open risk ever changed verdict.
+
+      Churn is confined to two keys, and neither is a rule-covered type:
+      `unresolved_objection` 0.6, `single_threaded` 0.2, every other key 1.0.
+      `single_threaded` appearing in 2 of 10 runs is worth a look on its own —
+      the deterministic rule stays silent on this deal, so those are AI-only
+      proposals, i.e. a probable false positive at 20%. Recall against the SQL
+      rules never dropped below 1.00, so the instability is all additive: the
+      model never loses a real risk, it occasionally invents a marginal one.
+
+      Two metrics were added rather than reusing `risk_stability`, which
+      compares exactly two runs: `metrics.risk_stability_n` (mean pairwise and
+      unanimous Jaccard, plus a per-key appearance rate, because "one key at
+      0.86" and "seven keys at 0.98" are different product problems) and
+      `metrics.verdict_flicker` (a changed verdict is a flip; an absent one is
+      reported separately, since "changed its mind" and "said nothing" have
+      different fixes). Failed runs are excluded from both and reported on
+      their own: folding an empty panel in as a run that agreed with nothing
+      would drag Jaccard toward zero and bury which key actually wobbles.
+
+- [ ] **11.10 `extract@3`.** **One** measured regression from the `@2` prompt,
+      not two — this item's premise was half wrong and the correction is the
+      first thing it bought:
+
+      **objection recall 0/3** — real, and confirmed by re-scoring the kept
+      baseline. `@2`'s "a condition is `decision_criteria`, not an objection"
+      pushed every objection out of the type, and `objection` feeds
+      `unresolved_objection`.
+
+      ~~commitment recall 1/3~~ — **not a regression. It is 3/3.** `1/3` was
+      `extract@1`'s figure; `@2`'s precedence list is what fixed it, and
+      `recorded/extract-baseline-gpt-oss-120b.json`'s own comment says so
+      ("fixed commitment recall (1/3 -> 3/3), at the cost of objection recall
+      (1/3 -> 0/3)"). The claim survived in this task because the replay path
+      could not read that recording — see *Found during implementation*. Now
+      pinned by a test so it cannot drift back.
+
+      Measured `@2` baseline, reproduced from the recording with no API calls:
+      recall 0.73, f1 0.54, precision 0.43; by type `budget` 3/3,
+      `commitment` 3/3, `competitor` 1/1, `deadline` 2/3, `decision_criteria`
+      4/5, **`objection` 0/3**, `requirement` 4/5, `stakeholder` 2/3.
+
+      One of the three objection labels is itself wrong: `n3` is "My team has
+      signed off." — s2's objection being *resolved*, not an objection. No
+      prompt should extract it as a concern, so **objection recall against the
+      current labels is capped at 2/3**. Fixing the label is out of this
+      task's scope; hill-climbing against it is not an option, so the target
+      is restated accordingly.
+      *Done when:* objection recall ≥ 2/3 excluding the mislabelled `n3`, with
+      no regression against `@2`'s f1 of 0.54, measured on the existing
+      fixtures.
+
+      **Still open, and the done-when above is now known to be unmeasurable as
+      written.** A candidate prompt exists and has been run; the comparison it
+      asks for cannot be made at n=1. Measured 2026-10-05, primary model
+      throughout:
+
+      | arm | runs | recall | f1 | objection | deadline |
+      |---|---|---|---|---|---|
+      | `@2` recorded (Oct 1) | 1 | 0.73 | 0.54 | 0/3 | 2/3 |
+      | `@2` fresh | 1 | 0.81 | 0.58 | 1/3 | 3/3 |
+      | `@2` fresh | 1 | 0.77 | 0.55 | 1/3 | — |
+      | `@2` fresh | 1 | 0.77 | 0.58 | 1/3 | — |
+      | `@2` fresh | 1 | 0.69 | 0.51 | 0/3 | — |
+      | **`@3`** | 1 | 0.73 | 0.56 | **2/3** | 1/3 |
+
+      `@2` alone spans **f1 0.51–0.58 and objection 0/3–1/3 with no prompt
+      change at all.** `@3`'s f1 of 0.56 sits inside that band, so the single
+      comparison that looked like a win (0.56 vs the recorded 0.54) was
+      measuring the dice. Against a same-day `@2` it is a *loss* (0.56 vs
+      0.58), and it trades two objections (`s1`, `s2` — both found) for two
+      other facts in the same transcript (`s3` requirement, `s6` deadline),
+      with deadline recall falling 3/3 → 1/3. All four swapped labels are in
+      `02-security-review`, which suggests a roughly fixed per-window output
+      budget being reallocated rather than a genuine comprehension change.
+
+      Also corrected: **`@2`'s objection recall is not 0/3.** It is 1/3 in four
+      of five fresh runs. The 0/3 in the kept recording is one sample, and this
+      task's premise rested on it.
+
+      **What is needed to close this:** n≈4 per arm, which the harness now
+      supports (`--repeat N`, with `aggregate` reporting per-label hit rates
+      rather than a single verdict). Not run — at 8,000 TPM on the free tier
+      one corpus pass is ~26K tokens and ~3 min of pure rate-limit wait, so
+      eight passes is ~25 min, and the measurement was stopped by choice rather
+      than spend it. **`@3` must not ship on the evidence above**; `extract`
+      stays at `@2` and `prompts/extract_v3.py` stays registered under its own
+      name, unused by the pipeline.
+
+- [ ] **11.11 Task 1.5's three-way model comparison.** Still open from Phase 1.
+      `openai/gpt-oss-120b` is the primary by assertion, not measurement, and
+      `groq_model_challenger` exists in settings for this.
+      *Done when:* primary, cheap and challenger are scored on the same fixtures
+      and the choice is recorded with its numbers.
+
+      **Still open. Unblocked but not run.** The blocker was that
+      `run_extraction_eval --live` did not exist — it raised
+      `SystemExit("live scoring is wired in task 3.6")` and 3.6 shipped without
+      wiring it, so both this task and 1.5 were waiting on a code path
+      everything assumed was there. That path now exists and works against the
+      real extractor, with `role` and `prompt` overrides on
+      `extract.extract_window`/`extract_facts`.
+
+      Not run because 11.10 established that **one run per arm cannot separate
+      an arm from the noise** — `@2` spans f1 0.51–0.58 unchanged — and a
+      three-way comparison at n=1 would produce a ranking of three dice rolls
+      and record it as a model choice. That is worse than leaving the primary
+      unmeasured, because it would look settled.
+
+      **To close:** `--live --model all --repeat 4` (12 corpus passes, ~40 min
+      at 8,000 TPM, and it includes the Preview-tier challenger at 5-6x the
+      primary's price). Until then `openai/gpt-oss-120b` remains the primary by
+      assertion, which is the status quo and is now at least labelled.
+
+### Order
+
+11.1 → 11.2 → (11.3, 11.4, 11.7 in parallel) → 11.5 → 11.6 → 11.8 → 11.9 →
+11.10 → 11.11.
+
+11.1–11.4 and 11.7 are plumbing against verified gaps and should land together.
+11.8 waits on nothing technical but is better placed after 11.2, since both
+write `recommendations` and 11.2 is the one with a reconciliation rationale
+behind it. 11.10 is last of the substantive items because it is hill-climbing
+with no fixed finish line, and 11.9 should precede it so there is a stability
+baseline to regress against.
+
+### What Phase 11 is explicitly not
+
+| Not doing | Why |
+|---|---|
+| `users` / auth | single-user MVP; `ae_display_name` in settings stays the AE identity, and `origin` carries the only attribution distinction the AI layer needs |
+| Langfuse / LangSmith / `ai_runs` | structured per-run logging (0.7) plus 11.5 is the whole observability story; accepted cost is no trace history |
+| Anything in Out of scope, below | unchanged by this phase, except that 11.8 takes the one chat write tool that table always allowed |
 
 ---
 
@@ -734,17 +1122,142 @@ Events invalidate, the clock sweeps. Design: `README.md` §3, Triggers.
 
 | Item | Reason |
 |---|---|
-| Embeddings and similarity retrieval | `README.md` §7 — corpus too small, second vendor not earned; the column and index already exist for a later backfill |
+| Embeddings and similarity retrieval | `README.md` §7 — corpus too small, second vendor not earned. Worth stating plainly: pgvector gives a column type, distance operators and index types and **no embedding model**, so `document_chunks.embedding` is NULL on every row and its HNSW index is empty. Groq serves no embeddings endpoint, so `settings.embedding_model` (an OpenAI name) is unreachable as well as unread. Retrieval is lexical `ilike` in one of nine chat tools, and `pg_trgm` covers the one place relevance was load-bearing (`0016`). The declarations stay for a later backfill |
 | Cross-deal prioritization | not until single-deal detection is trusted |
 | Document classification at upload | five values in a dropdown; ingest is synchronous by design |
-| Chat write tools | `propose_task` at most, after the read path is trusted |
+| Chat write tools beyond `propose_task` | the read path is now trusted, so `propose_task` moves **in** as task 11.8; nothing further |
 | Fine-tuning | the dismissal feedback loop covers adaptation |
-| `ai_runs` table | Langfuse or LangSmith covers tracing (`docs/schema/README.md` §10) |
+| Langfuse / LangSmith | **decided against for the MVP.** `client.py`'s structured per-run logging (0.7) plus `GET /system/ai-status` (11.5) is the observability story; the accepted cost is no per-run history and no trace tree |
+| `ai_runs` table | same ground as above — tracing is logs plus one status endpoint, not a table (`docs/schema/README.md` §10) |
+| `users` table / auth | single-user MVP. `ae_display_name` in settings is the AE identity, and `origin` already distinguishes AI writes from human ones |
 | LangGraph checkpointers | pipeline and chat are already durable in Postgres (`README.md` §7) |
 
 ---
 
 ## Found during implementation
+
+- **Supersession recall was bounded by recency-ordered candidates.**
+  `reconcile.supersede_facts` chose which older facts a new fact might
+  replace with `ORDER BY extracted_at DESC LIMIT 10` -- recency standing in
+  for relevance, which holds only while a deal has fewer than ten accepted
+  facts of one `fact_type`. Past that the one older
+  fact genuinely about the same subject can fall outside the window, the model
+  never sees it, and it stays `accepted` forever while a newer fact
+  contradicts it -- **both then render on the panel, each with a valid
+  citation.** Nothing is wrong with the evidence; the shortlist was wrong.
+  Fixed: `0016_fact_content_trgm` adds a GIN `gin_trgm_ops` index on
+  `extracted_facts.content` (no `CREATE EXTENSION` -- `0010` owns `pg_trgm`,
+  and two revisions each believing they may drop it is its own trap), and the
+  shortlist is now selected **per new fact**, `ORDER BY similarity(content,
+  :new_content) DESC LIMIT 10`, above a floor of `SIMILARITY_FLOOR = 0.15`.
+  The call count cannot rise -- it was already one per new fact -- and falls
+  whenever a shortlist comes back empty.
+  **The floor is measured, not guessed.** On real fact pairs a verbatim
+  revision scores ~0.57, a revision reworded end to end ~0.19, two facts
+  sharing only deal vocabulary ~0.13, unrelated noise ~0.08. The pg_trgm
+  default of 0.3 would discard the reworded revision, which is the exact case
+  this function exists for. The gap between the weakest keep (0.19) and the
+  strongest drop (0.13) is narrow, so the floor prunes the long tail and the
+  *ordering* does the real work; the model still answers null when unsure.
+  `reconcile_commitments` was unbounded and is now capped at 10, ordered by
+  `greatest(similarity(description, ...))` over the new facts with the due
+  date as tiebreak, and **deliberately has no floor**: a commitment and the
+  fact that satisfies it routinely share almost no wording ("send the SOC 2
+  report" against "Dana circulated the security pack"), so a floor there would
+  discard the pairs worth catching.
+  **Trigram rather than embeddings, deliberately** -- `pg_trgm` is already
+  installed, there is no provider to call (Groq has no embeddings endpoint),
+  no dimension to pin, no second code path to keep working, and the existing
+  test harness can measure it. Embeddings only if a measured need appears.
+  `tests/test_reconcile.py` is new: 4 tests, and the one that exercises the
+  gap failed before the change and passes after.
+
+- **One stray array element fails the whole detect run, and it happens 30% of
+  the time.** Task 11.9's ten-run sample lost 3 runs, in what looked like two
+  different ways and is one defect: the model emits a spurious non-object
+  element inside the `risks` array — a bare `""` in runs 4 and 5, a truncated
+  `"{""risk_type"` in run 1 — in between otherwise valid risk objects. Groq's
+  schema enforcement rejects one shape up front (`400 json_validate_failed`)
+  and the other arrives and fails Pydantic (`Failed to parse DetectionOut`),
+  which is why it reads as two problems in the log. Either way **two or three
+  perfectly good risks are discarded with it and the panel renders nothing.**
+  Not fixed — 11.9's remit was to measure and write nothing — but it dominates
+  every other stability number on this page, and the same client path carries
+  `ExtractionResult.facts`, so it can corrupt 11.10's and 11.11's measurements
+  the same way. **Fixed** — tolerance at the parse boundary, decided
+  deliberately over the alternative of retrying: `client._strip_stray_elements`
+  drops an element only when its siblings are objects and it is not, which is
+  exactly the observed shape, and `_salvage` re-validates what is left.
+  Covers both arrival shapes, since the rejected text lives in a different
+  place in each: `error.failed_generation` on the 400, and the message content
+  when the completion arrives and fails Pydantic. Deliberately narrow — a list
+  of scalars is untouched, an object is never repaired field by field, a
+  missing required field still fails, unparseable JSON is not reconstructed,
+  and more than `_MAX_SALVAGED_DROPS` strays is treated as a lost response
+  rather than averaged into data. Logged at WARNING with outcome
+  `ok_salvaged` and the dropped paths, because the accepted cost here is a
+  quietly partial result and it must at least be countable.
+  Re-measured: **0 failures in 10**, recall still 1.00, flicker still 0.
+  14 tests in `tests/test_salvage.py`, built from the two payloads actually
+  observed rather than invented ones.
+
+- **Run-to-run variance is larger than the prompt change being measured, so
+  every single-run extraction score in this file is weaker evidence than it
+  looks.** Five fresh runs of the *unchanged* `extract@2` span **f1 0.51–0.58,
+  recall 0.69–0.81, objection recall 0/3–1/3**. The first `@3` comparison
+  therefore "won" (0.56 vs the recorded 0.54) purely by landing high in `@2`'s
+  own band, and a same-day `@2` at 0.58 reversed the verdict. This also means
+  the kept baseline's 0.73/0.54 is *a sample*, not *the* figure for `@2` — and
+  task 11.10 spent its existence chasing an objection recall of 0/3 that is
+  1/3 in four runs out of five.
+  Mitigated rather than solved: `--repeat N` plus `aggregate` now report mean,
+  min and max per arm and a **per-label hit rate**, because "found in 1 of 4
+  runs" and "found in 4 of 4" are different claims that a single run flattens
+  into "found". The corpus is 44 labels over three transcripts, so a handful of
+  reallocated facts moves f1 by several points; the honest reading is that this
+  fixture set can detect a *large* prompt effect and nothing subtler.
+
+- **The same `MissingGreenlet` trap twice, both times from a rollback between
+  iterations.** `session.rollback()` expires every loaded ORM attribute, so the
+  next loop iteration's first attribute read lazy-loads — and outside a
+  greenlet that raises rather than refetching. It cost runs 2-10 of the first
+  stability sample (fixed by reading `deal.id` into a local before the loop)
+  and then runs 2-3 of the first `--repeat 3`, where the expired objects were
+  the *chunks*, so all three transcripts failed and the aggregate reported
+  recall 0.26 for a prompt that scores 0.73. Fixed properly the second time:
+  the eval loads chunks as plain `DetachedChunk` namedtuples and the rollback
+  is gone, since the extractor takes `Sequence[Any]` and never queries through
+  them. The general lesson is that an ORM object held across an iteration
+  boundary in a loop that commits or rolls back is a latent failure, and the
+  symptom (a zeroed metric) looks exactly like a model regression.
+
+- **The eval replay scored the wrong file, in silence, and a wrong number
+  outlived it in this document.** `run_extraction_eval.replay` required
+  `predicted_facts` at the top level. The kept baseline
+  (`extract-baseline-gpt-oss-120b.json`) stores `by_transcript` instead, so it
+  was skipped with no message, and the only recording scored was
+  `extraction-discovery-example.json` — a hand-designed three-fact fixture for
+  the *metric* tests (one exact hit, one shifted span, one wrong type, one
+  invention), pooled against all three transcripts' labels for a corpus recall
+  of **0.08**. The visible cost: task 11.10 carried "commitment recall 1/3" as
+  an open regression when the baseline had said 3/3 since Phase 3, because
+  nothing could read the file that would have contradicted it. Fixed — replay
+  reads both shapes, an unreadable recording now raises instead of being
+  dropped, the designed fixture is flagged `_not_a_model_run`, and
+  `tests/eval/test_replay_shapes.py` pins the baseline's numbers including the
+  3/3 that was being re-litigated. The lesson is 7.4's again, one level out: a
+  harness that silently measures the wrong input is worse than one that
+  crashes.
+
+- **`run_extraction_eval --live` never existed.** It raised
+  `SystemExit("live scoring is wired in task 3.6, against the real
+  extractor")`, and 3.6 shipped without wiring it — so tasks 1.5/11.11 and
+  11.10 were both blocked on a code path everything assumed was there.
+  Implemented against the real extractor: `extract.extract_window` and
+  `extract_facts` now take `role` and `prompt` overrides (defaulting to
+  exactly what the pipeline did before), and the runner reads the transcripts'
+  chunks out of the database rather than re-chunking, because every label's
+  offsets point into those exact rows.
 
 - **The first shadow run reported recall 0.0, and the metric was the thing that
   was broken.** The model does not re-propose a risk that is already open -- it

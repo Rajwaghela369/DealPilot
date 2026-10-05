@@ -11,19 +11,34 @@ extracted fact cites its source, and a human decides what becomes real.
 | --- | --- |
 | Frontend | React 19, TypeScript, Vite |
 | Backend | FastAPI, SQLAlchemy 2 (async), Alembic |
-| Database | Postgres 16 + pgvector |
+| Database | Postgres 16 + pgvector (enabled and declared, not used -- see below) |
 | Object storage | MinIO (S3-compatible) |
 | Admin | pgAdmin 4 |
 | Containers | Docker Compose |
+
+**pgvector is enabled but unused.** Migration `0001` installs the extension
+and `document_chunks.embedding` is declared `vector(1536)`, but **nothing in
+this codebase computes an embedding**: every row's embedding is NULL, the HNSW
+index over the column is empty, and no query uses a distance operator.
+pgvector supplies a column type, distance operators and index types -- it has
+no embedding model and never reads the text -- so the column is waiting on a
+producer that does not exist here, and `settings.embedding_model` names an
+OpenAI model while this project's provider is Groq, which serves no embeddings
+endpoint. The only retrieval in the system is lexical: `content.ilike(...)`
+behind the chat agent's `search_documents`, plus trigram similarity for
+supersession candidates (`0016`). The declarations stay, deliberately, so that
+a later backfill is a job to run rather than a migration to write.
 
 ## Where things stand
 
 | | |
 | --- | --- |
-| **Schema** | 20 tables, 9 migrations, head at `0009` |
-| **API** | 48 endpoints under `/api/v1` |
-| **Built** | deals · stakeholders · stage history · tasks · meetings · attendees · documents · risks · recommendations · commitments |
-| **Not built** | chat, extraction agent, Evidence Validator, seeder |
+| **Schema** | 20 tables, 16 migrations, head at `0016` (plus 4 LangGraph checkpoint tables, outside Alembic by design) |
+| **API** | 70 endpoints under `/api/v1`, plus unversioned `/health` |
+| **AI** | 13-stage pipeline, 4 gates, worker, chat agent with 9 tools |
+| **Tests** | 188 |
+| **Built** | accounts · contacts · deals · stakeholders · stage history · tasks · meetings · attendees · documents · facts · risks · recommendations · commitments · briefs · chat · system |
+| **Not built** | seeder · frontend screens (the UI is an auth shell for auth this backend does not have — see Known gaps) |
 
 Two screens' worth of AI value already work **with no model calls**: the
 deterministic risk detector, and the deal participants roll-up that surfaces
@@ -99,7 +114,7 @@ cd backend && ../deal-pilot-env/bin/alembic upgrade head
 | --- | --- | --- |
 | frontend | http://localhost:5173 | Vite dev server, proxies `/api` |
 | backend | http://localhost:8000 | Swagger UI at `/docs` |
-| postgres | localhost:5432 | pgvector-enabled |
+| postgres | localhost:5432 | pgvector-enabled; nothing computes embeddings -- see the note above |
 | minio | localhost:9000 | S3 API; presigned preview URLs are signed for this host |
 | pgadmin | http://localhost:5051 | pre-registered connection |
 
@@ -144,6 +159,12 @@ cd backend
 | `0008` | documents are all-or-nothing |
 | `0009` | link recommendations to risks, record dismissals |
 | `0010` | enable `pg_trgm` for attendee name resolution |
+| `0011` | meeting analysis origin and failure state |
+| `0012` | detector provenance |
+| `0013` | open-risk taxonomy key |
+| `0014` | dirty-deal triggers and sweep cadence |
+| `0015` | give a proposed data correction somewhere to land |
+| `0016` | trigram index on `extracted_facts.content` -- supersession candidates by relevance, not recency |
 
 **Two traps, both documented in `docs/schema/TASKS.md`:** a native Postgres enum
 survives `DROP COLUMN`, so any migration dropping one must `DROP TYPE` as well
@@ -177,6 +198,21 @@ Run from `frontend/`:
 
 ## Known gaps
 
+- **The frontend and backend do not connect.** `frontend/src` calls exactly
+  five endpoints — `/auth/me`, `/auth/login`, `/auth/register`, `/auth/logout`,
+  `/auth/refresh` — and this backend has none of them, deliberately: single
+  user, no auth. Meanwhile the 70 business endpoints have no frontend consumer
+  and `tabs.ts` declares four screens that are not built. The decision is to
+  **strip auth from the frontend**, not to add it here; a `users` table is
+  explicitly out of scope (`docs/ai/README.md` §6).
+- **The worker has never been started**, and neither container has `langchain`
+  installed — those requirements were added after the images were built, and
+  `volumes: ./backend:/app` mounts source without reinstalling. The AI layer
+  currently runs only from the host venv, so `POST /deals/{id}/analysis` marks a
+  deal dirty and nothing consumes it. `docker compose build backend worker &&
+  docker compose up -d worker`. On 3.12 that resolves **LangChain 1.x**, where
+  `create_react_agent`'s `prompt=` is renamed `system_prompt=` — verify
+  `ai/chat.py` and `ai/graph.py` before relying on it.
 - **Placeholder AE identity.** `ae_display_name` in settings is how the roster
   decides which transcript speaker is us; there is no `users` table.
 - **Placeholder thresholds** in `queries.py` (`STALL_THRESHOLD_DAYS`,
