@@ -69,6 +69,7 @@ drawer is its own phase and lands before the pages that assert anything.
 | Data layer | TanStack Query. Server-side pagination, mutations that must invalidate lists, and a worker writing rows behind the UI's back -- hand-rolling that is most of the work. |
 | Auth | **Removed.** Delete `AuthForm.tsx`, `AuthContext.tsx`; rewrite `lib/api.ts`. Keep `Sidebar.tsx`, `MainLayout.tsx`, `Layout.css`. |
 | Styling | Plain CSS with custom properties, extending `Layout.css`, as the starting point -- six or seven primitives cover every screen below. A component library is permitted if it pays for itself; pick it in phase 0 rather than phase 6, because swapping one in later means rewriting every screen already built. |
+| Component library | **Decided in phase 0: none.** `index.css` and `Layout.css` already define a coherent dark theme, and the plan's own rule is that a library should set the look rather than be overridden -- which against an existing theme means discarding this one or fighting the library on every screen. Neither pays for itself across eight primitives that are each under forty lines of CSS. Still open, and neither is a look-and-feel concern: a charting library in phase 12, and virtualisation if a table outgrows a page. |
 
 ## Build order, and why it is not nav order
 
@@ -144,25 +145,25 @@ src/
 
 ### Tasks
 
-- [ ] **0.1 Strip auth.** Delete `src/components/AuthForm.tsx` and
+- [x] **0.1 Strip auth.** Delete `src/components/AuthForm.tsx` and
       `src/context/AuthContext.tsx`. `lib/api.ts` keeps `ApiError` and the
       `apiJson` shape and loses `credentials: 'include'`, `tryRefresh` and the
       401 retry -- this backend has no `/auth/*` and returns no 401s.
-- [ ] **0.2 Install** `react-router`, `@tanstack/react-query`.
-- [ ] **0.3 `routes.tsx`.** The tree above, with `/deals/:dealId` as a layout
+- [x] **0.2 Install** `react-router`, `@tanstack/react-query`.
+- [x] **0.3 `routes.tsx`.** The tree above, with `/deals/:dealId` as a layout
       route. Index redirect `/deals/:dealId` -> `overview`.
-- [ ] **0.4 `MainLayout` renders `<Outlet/>`.** Sidebar entries become
+- [x] **0.4 `MainLayout` renders `<Outlet/>`.** Sidebar entries become
       `NavLink`, so the active tab comes from the URL and not from state.
-- [ ] **0.5 QueryClient.** `staleTime` ~30s. One `queryKey` convention:
+- [x] **0.5 QueryClient.** `staleTime` ~30s. One `queryKey` convention:
       `['deals', dealId, 'risks', filters]`.
-- [ ] **0.6 `tokens.css` + `ui/` primitives.** Button, Card, Table, Badge,
+- [x] **0.6 `tokens.css` + `ui/` primitives.** Button, Card, Table, Badge,
       Drawer, Field, EmptyState, Spinner. Add more only when a page needs one.
       **If a component library is going to be used, decide here** -- it
       replaces most of this task, and choosing it after a few phases are built
       means rewriting them.
-- [ ] **0.7 Error + empty states as components,** not per-page markup. Every
+- [x] **0.7 Error + empty states as components,** not per-page markup. Every
       list in this app can be empty on a fresh install.
-- [ ] **0.8 `vite.config.ts`** already proxies `/api` -- confirm, do not change.
+- [x] **0.8 `vite.config.ts`** already proxies `/api` -- confirm, do not change.
 
 ---
 
@@ -202,14 +203,14 @@ suite, so the contract is trustworthy here.
 
 ### Tasks
 
-- [ ] **1.1 Accounts table** with `?limit`/`?offset` and `?q`.
-- [ ] **1.2 Create and edit forms.** `name` is required and `min_length=1`, so
+- [x] **1.1 Accounts table** with `?limit`/`?offset` and `?q`.
+- [x] **1.2 Create and edit forms.** `name` is required and `min_length=1`, so
       a rename to empty is a 422 -- validate before sending.
-- [ ] **1.3 Account detail** with its contacts.
-- [ ] **1.4 Contact create/edit/delete.** No `email` required.
-- [ ] **1.5 Render the two 409s properly:** account-with-deals, and
+- [x] **1.3 Account detail** with its contacts.
+- [x] **1.4 Contact create/edit/delete.** No `email` required.
+- [x] **1.5 Render the two 409s properly:** account-with-deals, and
       duplicate-email (link to the contact named in `detail`).
-- [ ] **1.6 Say what deleting a contact does.** `meeting_attendees.contact_id`
+- [x] **1.6 Say what deleting a contact does.** `meeting_attendees.contact_id`
       goes NULL and the attendee row survives, by design -- the row records
       that a name spoke in a transcript, which stays true. The confirm dialog
       should say so.
@@ -238,13 +239,13 @@ POST /deals            requires account_id (phase 1)
 
 ### Tasks
 
-- [ ] **2.1 Table + pager.** `total` counts before the window, so page numbers
+- [x] **2.1 Table + pager.** `total` counts before the window, so page numbers
       come from one request.
-- [ ] **2.2 Filter bar bound to `DealFilters`.** A misspelled param is a **422
+- [x] **2.2 Filter bar bound to `DealFilters`.** A misspelled param is a **422
       naming the field**, not a silently unfiltered list -- surface it rather
       than swallowing it. That 422 is deliberate (`extra="forbid"`).
-- [ ] **2.3 Create-deal form.** Account picker reads phase 1.
-- [ ] **2.4 Empty state** for a fresh install, pointing at Accounts.
+- [x] **2.3 Create-deal form.** Account picker reads phase 1.
+- [x] **2.4 Empty state** for a fresh install, pointing at Accounts.
 
 ---
 
@@ -289,15 +290,15 @@ needs a new endpoint; it is not in this plan.
 
 ### Tasks
 
-- [ ] **3.1 Layout route** at `/deals/:dealId` fetching the deal once.
-- [ ] **3.2 Sub-nav** as `NavLink`s; index redirects to `overview`.
-- [ ] **3.3 Overview panel** -- fields, inline edit via `PATCH`.
-- [ ] **3.4 Stage history list.**
-- [ ] **3.5 Analyse button + state.** `POST` only marks the deal dirty; the
+- [x] **3.1 Layout route** at `/deals/:dealId` fetching the deal once.
+- [x] **3.2 Sub-nav** as `NavLink`s; index redirects to `overview`.
+- [x] **3.3 Overview panel** -- fields, inline edit via `PATCH`.
+- [x] **3.4 Stage history list.**
+- [x] **3.5 Analyse button + state.** `POST` only marks the deal dirty; the
       worker picks it up on a 2s poll and sweeps each deal at most once per
       24h. So the button means *queued*, never *done* -- label it that way and
       poll `GET /deals/{id}/analysis`.
-- [ ] **3.6 Show when the worker is off.** `GET /system/ai-status`. If it is
+- [x] **3.6 Show when the worker is off.** `GET /system/ai-status`. If it is
       not running, "Analyse" queues something nothing will consume, and the UI
       should say so rather than appear broken.
 
@@ -342,22 +343,47 @@ Four refusals the UI must render as readable sentences, not "Request failed":
 | `415` | legacy `.doc` -- the message says to re-save as `.docx` |
 | `422` | the file is readable but empty |
 
+Two more refusals than the four above, found in `services/ingest.py` and
+verified live: **413** when the file exceeds `max_upload_bytes`, and **502**
+when object storage is unreachable (nothing is saved, so retrying is safe).
+The 415 row also covers a damaged PDF/docx and a non-UTF-8 text file. Mapping
+by status rather than by message is what makes the set complete.
+
+**Upload is idempotent, and the status code is how you can tell.** `documents`
+carries `UNIQUE(content_hash)`, so re-uploading the same bytes answers **200
+with the existing document** rather than 201. Not an error case -- but a UI
+that reported "uploaded" for a 200 would be claiming a second copy exists, so
+the client surfaces the distinction. Verified: the same bytes under a
+different filename return the original document's id.
+
 **Pending backend.** Upload is synchronous and parses inside the request, so a
 large PDF blocks. There is no `documents.status` and no 202-and-poll path, on
 purpose. Fine at 25 MiB; revisit only if the limit rises.
 
+**Broken backend: `source_type=meeting_transcript` returns 500.** Every other
+source type uploads cleanly. `upload_document` calls
+`activity.touch_deal`, whose ORM `UPDATE` expires `deal.last_activity_at` on
+the in-session `Deal`; it then calls `analysis_service.record_change` ->
+`detect_service.run` -> `_gone_quiet`, which reads that expired attribute and
+triggers a lazy refresh outside the greenlet --
+`sqlalchemy.exc.MissingGreenlet`. Only this path chains those two calls on one
+`Deal` object, which is why nothing else hits it. A `db.refresh(deal)` between
+them, or passing the known value through, is the fix. **This blocks task 7.7**
+and the main point of phase 4: the transcript is what makes a meeting
+analysable.
+
 ### Tasks
 
-- [ ] **4.1 Upload control** with the `source_type` select. It is required --
+- [x] **4.1 Upload control** with the `source_type` select. It is required --
       omitting it is a 422 that reads like a bug.
-- [ ] **4.2 Map all four refusals** to the API's own `detail` string. The
+- [x] **4.2 Map all four refusals** to the API's own `detail` string. The
       backend writes actionable messages; do not replace them.
-- [ ] **4.3 Document table** with `chunk_count`.
-- [ ] **4.4 Preview** -- follow the 302; it is a short-lived presigned URL
+- [x] **4.3 Document table** with `chunk_count`.
+- [x] **4.4 Preview** -- follow the 302; it is a short-lived presigned URL
       signed for the browser's host, so fetch a fresh one per view and never
       cache it.
-- [ ] **4.5 Delete** with confirmation.
-- [ ] **4.6 Accept a bare array.** This endpoint has no `Page` envelope.
+- [x] **4.5 Delete** with confirmation.
+- [x] **4.6 Accept a bare array.** This endpoint has no `Page` envelope.
 
 ---
 
@@ -385,17 +411,43 @@ GET /chunks/{chunk_id}                       resolve a citation handle
 GET /documents/{document_id}/preview         "open the source"
 ```
 
+**Two naming corrections, both verified against the schema.**
+
+*Task 5.5.* `rejected` is not a `verification_status`. That enum is
+`unverified | verified | span_missing | value_drifted | stale`, and `rejected`
+is a `facts.status` -- a human Gate 3 decision, phase 9. The states that mean
+"the source no longer supports this" are **`span_missing`** and
+**`value_drifted`**, and those are what must not share a colour with `stale`.
+Implemented as: `stale` amber ("was verified, then the deal moved on -- still
+grounded, possibly overtaken"), the other two red ("nothing currently backs
+this"), `unverified` neutral because *not yet checked* is not a verdict and
+most deterministic `record` evidence sits there permanently.
+
+*Task 5.6.* `claim_validations` is **not exposed over HTTP at all** -- no
+schema, no route. So there is no verdict available to render, which makes
+showing `confidence` as one easier rather than harder. The drawer therefore
+renders no confidence number at all; the only trust signal in it is
+`verification_status`, which is a real machine check.
+
+**Evidence offsets are chunk-relative.** `EvidenceItem.char_start/char_end`
+index into the *chunk's* `content`, not the document's -- verified live, where
+a span at 103-152 satisfies `content.slice(103,152) === snippet` exactly.
+`ChunkDetail.metadata` carries a second, document-level pair; using those to
+highlight would mark the wrong text. The drawer re-checks the slice at render
+and distinguishes three outcomes: exact, drifted-but-present, and absent --
+the last being Gate 0's `span_missing`, shown as such rather than papered over.
+
 **Pending backend.** None.
 
 ### Tasks
 
-- [ ] **5.1 `Drawer` primitive** (phase 0) + `EvidenceList`.
-- [ ] **5.2 Render a `claim_evidence` row:** source kind, span, quote.
-- [ ] **5.3 Chunk resolution** by id, for chat handles.
-- [ ] **5.4 "Open source document"** link.
-- [ ] **5.5 Distinguish `stale` from `rejected`.** They are different states
+- [x] **5.1 `Drawer` primitive** (phase 0) + `EvidenceList`.
+- [x] **5.2 Render a `claim_evidence` row:** source kind, span, quote.
+- [x] **5.3 Chunk resolution** by id, for chat handles.
+- [x] **5.4 "Open source document"** link.
+- [x] **5.5 Distinguish `stale` from `rejected`.** They are different states
       and must not share a colour.
-- [ ] **5.6 Confidence is self-reported.** `confidence` is the generator's own
+- [x] **5.6 Confidence is self-reported.** `confidence` is the generator's own
       guess, not a validation result; verdicts live in `claim_validations`.
       Never render one as the other -- if that is hard to show honestly, show
       neither.
@@ -733,7 +785,21 @@ Learned by testing the running backend, not by reading the code.
 7. **Datetimes are timezone-aware with `Z`.** Verified across payloads.
 8. **No auth, no 401s.** Single user. Do not reintroduce a token layer.
 9. **The worker must be running** for AI features. It polls every 2s and sweeps
-   each deal at most once per 24h, so `POST .../analysis` means *queued*.
+   each deal at most once per 24h.
+10. **`POST /deals/{id}/analysis` runs the detector synchronously** -- it does
+    *not* mark the deal dirty and return. `run_detection` calls
+    `detect_service.run` inline, commits, and answers with
+    `{risks_detected, recommendations_written, risks_auto_resolved}`. Six of
+    the ten risk types are joins over existing tables and need no model call,
+    so the work completes inside the request. Verified against the running
+    backend. The dirty/debounce path is real but is what `GET .../analysis`
+    reports on, and the worker owns it -- so the button means *done*, and
+    labelling it *queued* would be its own kind of dishonest.
+11. **Convention #2 is not enforced everywhere.** `?limit=` on
+    `GET /deals/{id}/stage-history` returns 200 and silently ignores the
+    window rather than 422 -- that endpoint's filter model does not inherit
+    `ListQuery` and declares no extras to forbid. Harmless today because no
+    client sends it, but it is the lie convention #2 exists to prevent.
 
 # Pending backend work, collected
 
@@ -749,3 +815,4 @@ Tracked here so no frontend phase silently waits on one.
 | Stray-array-element detect failure | 3, 7 | Intermittent Groq `json_validate_failed` fails a whole run; no inter-attempt backoff on the sweep. |
 | `origin` on `deal_contacts` / `meetings` | 8 | Cannot attribute a value to human or model. |
 | Route tests for 61 of 71 operations | all | Only accounts/contacts are covered; every other contract is unverified. |
+| `MissingGreenlet` on transcript upload | 4, 7 | `POST /deals/{id}/documents` with `source_type=meeting_transcript` is a 500: `touch_deal` expires `deal.last_activity_at`, then `detect._gone_quiet` lazy-loads it. Blocks 7.7. |
