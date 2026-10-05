@@ -20,19 +20,26 @@ What that means in practice:
 - **Single user, no auth, no CRM integration.** No roles, no permissions, no
   sharing, no invitations, no audit trail of who did what -- there is one
   person and no `users` table, deliberately (`docs/ai/README.md` section 6).
-- **No component library, no charting library, no animation library, no state
-  machine, no form library.** Seven primitives and plain CSS cover all twelve
-  phases. Every dependency added here is one more thing to keep working for a
-  product with one user.
-- **Not in scope at all:** dark mode, theming, i18n, responsive layouts below
-  tablet, keyboard shortcuts, drag and drop, virtualised lists, optimistic
-  rendering beyond the chat composer, offline support, bulk actions,
-  export/print, saved views, onboarding tours, skeleton loaders beyond a
-  spinner.
+- **Libraries are allowed where they earn their place.** A component library,
+  a charting library, an animation library, a form library -- reach for any of
+  them when a phase is genuinely better for it. The default is still the seven
+  primitives plus plain CSS, because that covers all twelve phases and every
+  dependency is one more thing to keep working. So the test is not "is this
+  forbidden" but "is this doing more work than it costs". Two practical notes:
+  prefer one library that owns a concern over three that overlap, and if a
+  component library goes in, let it set the look rather than fighting it with
+  overrides.
+- **Allowed, but nothing below depends on them.** Dark mode, theming, i18n,
+  responsive layouts below tablet, keyboard shortcuts, drag and drop,
+  virtualised lists, optimistic rendering, offline support, bulk actions,
+  export and print, saved views, onboarding tours, richer loading states. Add
+  any of them where it makes a screen better. None is a prerequisite for any
+  phase, so none should block one, and a phase is finishable without them.
 - **Elegance here means restraint,** not polish applied afterwards: consistent
   spacing, one type scale, one accent colour, real empty states, and errors
-  that say what happened. A screen that does four things well beats one that
-  gestures at twelve.
+  that say what happened. That holds whatever is installed -- a component
+  library makes consistency cheaper, not automatic. A screen that does four
+  things well beats one that gestures at twelve.
 - **Correctness is the exception to all of the above.** The evidence drawer
   (phase 5), the refusal messages (4.2), and never presenting a self-reported
   `confidence` as a validation verdict (5.6) are **not** polish and do not get
@@ -61,7 +68,7 @@ drawer is its own phase and lands before the pages that assert anything.
 | Router | `react-router` v7. The deal workspace is seven nested routes; nesting is what it is for, and real URLs mean a citation can be linked to. |
 | Data layer | TanStack Query. Server-side pagination, mutations that must invalidate lists, and a worker writing rows behind the UI's back -- hand-rolling that is most of the work. |
 | Auth | **Removed.** Delete `AuthForm.tsx`, `AuthContext.tsx`; rewrite `lib/api.ts`. Keep `Sidebar.tsx`, `MainLayout.tsx`, `Layout.css`. |
-| Styling | Plain CSS with custom properties, extending `Layout.css`. **No component library** -- MUI or Ant would dominate the look and outweigh the app. Six or seven primitives cover every screen below. |
+| Styling | Plain CSS with custom properties, extending `Layout.css`, as the starting point -- six or seven primitives cover every screen below. A component library is permitted if it pays for itself; pick it in phase 0 rather than phase 6, because swapping one in later means rewriting every screen already built. |
 
 ## Build order, and why it is not nav order
 
@@ -149,7 +156,10 @@ src/
 - [ ] **0.5 QueryClient.** `staleTime` ~30s. One `queryKey` convention:
       `['deals', dealId, 'risks', filters]`.
 - [ ] **0.6 `tokens.css` + `ui/` primitives.** Button, Card, Table, Badge,
-      Drawer, Field, EmptyState, Spinner. Nothing else until a page needs it.
+      Drawer, Field, EmptyState, Spinner. Add more only when a page needs one.
+      **If a component library is going to be used, decide here** -- it
+      replaces most of this task, and choosing it after a few phases are built
+      means rewriting them.
 - [ ] **0.7 Error + empty states as components,** not per-page markup. Every
       list in this app can be empty on a fresh install.
 - [ ] **0.8 `vite.config.ts`** already proxies `/api` -- confirm, do not change.
@@ -672,8 +682,9 @@ number on it is established by an earlier phase.
 **Structure.** A small grid: pipeline by stage, deals needing attention, tasks
 due, AI status.
 
-**Features.** Counts and the few rows worth surfacing. No charting library --
-a stacked bar made of divs is enough, and it will outlive a dependency.
+**Features.** Counts and the few rows worth surfacing. A stacked bar made of
+divs is enough for pipeline-by-stage and will outlive a dependency, so start
+there; a charting library is fair game if the dashboard grows past it.
 
 **API routes.**
 
