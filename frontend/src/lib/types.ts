@@ -1002,6 +1002,19 @@ export interface FactFilters {
 export const TASK_STATUSES = ['open', 'done', 'cancelled'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
+/**
+ * Minimal recommendation identity, as embedded in a task's provenance.
+ *
+ * Mirrors the backend's `RecommendationRef`, which mirrors `AccountRef`.
+ */
+export interface RecommendationRef {
+  id: string
+  /** text + CHECK on the server: may gain values. */
+  action_type: string
+  title: string
+  rationale: string | null
+}
+
 export interface TaskListItem {
   id: string
   deal_id: string
@@ -1017,6 +1030,19 @@ export interface TaskListItem {
   origin: Origin
   /** Open and past due. Computed per request, never stored. */
   is_overdue: boolean
+  /**
+   * The recommendation a human accepted to create this task, if any.
+   *
+   * **Derived server-side**, not a column: the edge lives on
+   * `recommendations.created_task_id` and the API reads it back with a
+   * correlated subquery, so do not go looking for a `tasks` column to filter
+   * on. The id alone here, because the list needs only enough to link.
+   *
+   * Not interchangeable with `origin`. A task promoted from an extracted fact
+   * is also `origin: 'ai'` and has no recommendation, so a null here with
+   * `origin: 'ai'` is a real and different state.
+   */
+  source_recommendation_id: string | null
   completed_at: string | null
   created_at: string
 }
@@ -1025,6 +1051,12 @@ export interface TaskDetail extends TaskListItem {
   description: string | null
   /** Set only by the Gate 3 promotion path. Read-only. */
   source_fact_id: string | null
+  /**
+   * The suggestion this task came from, with the rationale that explains why
+   * it exists. A different provenance path from `source_fact_id`, and both can
+   * be null -- a hand-written task has neither.
+   */
+  source_recommendation: RecommendationRef | null
   updated_at: string
 }
 

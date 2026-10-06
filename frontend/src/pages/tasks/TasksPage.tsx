@@ -133,14 +133,28 @@ export function TasksPage() {
             {row.title}
           </div>
           <div className="deal-cell__sub">
-            {/* Task 11.5: provenance. `origin='ai'` is the available signal --
-                it means the work was suggested rather than thought of by the
-                person doing it. The *specific* recommendation is not linkable
-                from here: `tasks` has no `source_recommendation_id`, the link
-                lives on `recommendations.created_task_id`, and there is no
-                endpoint to query it in reverse. So this says what is true
-                rather than inventing a link. */}
-            {row.origin === 'ai' ? 'from a suggestion' : 'added by hand'}
+            {/* Task 11.5: provenance, and the payoff of phase 6 -- this is the
+                last link in `risk -> recommendation -> [human accepts] ->
+                task`, read back.
+
+                Three distinct states, not two. A task with a recommendation
+                links to it. A task that is `ai` *without* one came from an
+                accepted fact instead, and saying "from a suggestion" there
+                would name the wrong parent. Anything else was typed by hand. */}
+            {row.source_recommendation_id ? (
+              <Link
+                to={`/deals/${row.deal_id}/risks#rec-${row.source_recommendation_id}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                from a suggestion
+              </Link>
+            ) : row.origin === 'ai' ? (
+              <span title="Promoted from an extracted fact rather than an accepted recommendation.">
+                from an extracted fact
+              </span>
+            ) : (
+              'added by hand'
+            )}
           </div>
         </div>
       ),

@@ -701,3 +701,22 @@
 .attendee__add .ui-field {
   flex: 1;
 }
+
+/* A recommendation arrived at from a task's provenance link. Briefly outlined
+ * so the eye lands on it -- scrolling alone does not say "this one". */
+.rec-card.is-linked {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: rec-linked-fade 2.4s ease forwards;
+}
+
+@keyframes rec-linked-fade {
+  0%, 60% { outline-color: var(--accent); }
+  100% { outline-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-card.is-linked {
+    animation: none;
+  }
+}

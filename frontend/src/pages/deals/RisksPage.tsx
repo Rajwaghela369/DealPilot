@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { keys, recommendations, risks } from '../../lib/queries'
 import type {
@@ -83,7 +83,18 @@ export function RisksPage() {
 
   const [accepting, setAccepting] = useState<RecommendationDetail | null>(null)
   const [dismissing, setDismissing] = useState<RecommendationDetail | null>(null)
-  const [showDecided, setShowDecided] = useState(false)
+  /**
+   * Arrived from a task's "from a suggestion" link?
+   *
+   * Then the target recommendation must be on screen, and it may be nested in
+   * a risk that was since resolved or dismissed -- which this toggle hides by
+   * default. Read from the hash as *lazy initial state* rather than in an
+   * effect: setting state in an effect body renders twice and is what the
+   * forms in phases 1-3 had to be restructured to avoid.
+   */
+  const [showDecided, setShowDecided] = useState(
+    () => typeof window !== 'undefined' && window.location.hash.startsWith('#rec-'),
+  )
 
   const riskList = useQuery({
     queryKey: keys.risks(deal.id),
@@ -144,6 +155,24 @@ export function RisksPage() {
     },
     onError: (error) => toast.error(errorMessage(error)),
   })
+
+  /**
+   * Scroll a linked recommendation into view.
+   *
+   * A browser scrolls to a hash on a real navigation, but an SPA route change
+   * resolves before the data does, so by the time the card exists the moment
+   * has passed. Keyed on the fetch finishing rather than on mount for the same
+   * reason. A DOM side effect, which is what effects are actually for.
+   */
+  useEffect(() => {
+    if (!riskList.isSuccess && !recList.isSuccess) return
+    const hash = window.location.hash
+    if (!hash.startsWith('#rec-')) return
+    const target = document.getElementById(hash.slice(1))
+    if (!target) return
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    target.classList.add('is-linked')
+  }, [riskList.isSuccess, recList.isSuccess])
 
   const allRisks = riskList.data ?? []
   const liveRisks = allRisks.filter((r) => r.status === 'open' || r.status === 'mitigating')

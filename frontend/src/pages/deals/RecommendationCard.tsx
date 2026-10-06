@@ -52,7 +52,13 @@ export function RecommendationCard({
   const decided = rec.status !== 'suggested'
 
   return (
-    <div className={`rec-card${decided ? ' is-decided' : ''}${correction ? ' is-correction' : ''}`}>
+    <div
+      // The anchor target for a task linking back to the suggestion it came
+      // from (task 11.5). Same `#<kind>-<id>` convention phase 1 used for
+      // `#contact-<id>`.
+      id={`rec-${rec.id}`}
+      className={`rec-card${decided ? ' is-decided' : ''}${correction ? ' is-correction' : ''}`}
+    >
       <div className="rec-card__head">
         <Badge tone={correction ? 'info' : 'accent'}>
           {correction ? 'Record correction' : humanise(rec.action_type)}
