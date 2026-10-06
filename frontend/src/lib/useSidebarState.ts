@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 
-const KEY = 'dealpilot.sidebar.collapsed'
+const KEY = 'cognideal.sidebar.collapsed'
 
 /**
  * Whether the sidebar is collapsed, remembered per browser.

@@ -1,4 +1,4 @@
-# DealPilot
+# CogniDeal
 
 An evidence-grounded sales copilot. Single user, no auth, no CRM integration.
 
@@ -28,6 +28,16 @@ endpoint. The only retrieval in the system is lexical: `content.ilike(...)`
 behind the chat agent's `search_documents`, plus trigram similarity for
 supersession candidates (`0016`). The declarations stay, deliberately, so that
 a later backfill is a job to run rather than a migration to write.
+
+**The product was renamed from DealPilot, and the infrastructure was not.**
+`POSTGRES_USER`, `POSTGRES_DB`, `MINIO_ROOT_USER`, `MINIO_BUCKET`, the Compose
+volume names and the pgAdmin bootstrap account all still read `dealpilot`. That
+is deliberate, not an unfinished rename: those identifiers name a database, a
+bucket and four volumes that hold real rows and real objects, so changing them
+is a data migration rather than a string edit, and nobody outside this repo ever
+sees them. The container names (`dealpilot-backend-1`) follow from the checkout
+directory, so they move only if the directory does. Rename them at a point where
+you are willing to reseed, or never.
 
 ## Where things stand
 

@@ -1,4 +1,4 @@
-# DealPilot — Data Model
+# CogniDeal — Data Model
 
 The schema for the MVP: a single-user, evidence-grounded sales copilot backed by
 Postgres + pgvector. No auth, no organizations, no CRM integration.

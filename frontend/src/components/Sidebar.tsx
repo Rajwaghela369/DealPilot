@@ -94,7 +94,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <span className="sidebar-brand-mark" />
-        {!collapsed && <span className="sidebar-brand-name">DealPilot</span>}
+        {!collapsed && <span className="sidebar-brand-name">CogniDeal</span>}
         <button
           type="button"
           className="sidebar-collapse"

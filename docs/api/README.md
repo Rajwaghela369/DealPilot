@@ -1,4 +1,4 @@
-# DealPilot — API
+# CogniDeal — API
 
 The HTTP layer over the schema in `docs/schema/README.md`. Single user, no auth.
 

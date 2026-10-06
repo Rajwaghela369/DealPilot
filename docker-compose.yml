@@ -40,7 +40,7 @@ services:
       - "${PGADMIN_HOST_PORT:-5051}:80"
     volumes:
       - dealpilot_pgadmin_data:/var/lib/pgadmin
-      # Pre-registers the DealPilot Postgres connection so it shows up
+      # Pre-registers the CogniDeal Postgres connection so it shows up
       # automatically on first login instead of being added by hand.
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:

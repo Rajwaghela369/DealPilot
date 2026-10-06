@@ -1,4 +1,4 @@
-# DealPilot — AI Layer
+# CogniDeal — AI Layer
 
 The model layer over the schema in `docs/schema/README.md` and the HTTP layer in
 `docs/api/README.md`. Task list: `TASKS.md` in this directory.

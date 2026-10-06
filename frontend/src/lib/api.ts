@@ -1,5 +1,5 @@
 /**
- * Transport for the DealPilot API.
+ * Transport for the CogniDeal API.
  *
  * There is no auth layer and there is not going to be one: the backend serves
  * a single user, exposes no `/auth/*` and returns no 401s
