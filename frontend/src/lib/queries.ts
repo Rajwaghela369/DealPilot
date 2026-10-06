@@ -304,13 +304,28 @@ export const documents = {
    */
   upload: async (
     dealId: string,
-    input: { file: File; source_type: DocumentSourceType; title?: string; occurred_at?: string },
+    input: {
+      file: File
+      source_type: DocumentSourceType
+      title?: string
+      occurred_at?: string
+      /**
+       * Attach as this meeting's transcript. Only valid with
+       * `source_type: 'meeting_transcript'` -- anything else is a 422.
+       *
+       * This is what makes a meeting analysable: extraction reads
+       * `meeting.transcript_document_id` and nothing else, so a transcript no
+       * meeting points at is invisible to it.
+       */
+      meeting_id?: string
+    },
   ): Promise<{ document: DocumentDetail; duplicate: boolean }> => {
     const body = new FormData()
     body.append('file', input.file)
     body.append('source_type', input.source_type)
     if (input.title?.trim()) body.append('title', input.title.trim())
     if (input.occurred_at) body.append('occurred_at', input.occurred_at)
+    if (input.meeting_id) body.append('meeting_id', input.meeting_id)
 
     const res = await apiFetch(`/deals/${dealId}/documents`, { method: 'POST', body })
     if (!res.ok) {

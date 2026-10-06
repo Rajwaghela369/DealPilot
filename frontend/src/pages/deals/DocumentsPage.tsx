@@ -60,6 +60,9 @@ export function DocumentsPage() {
       queryClient.invalidateQueries({ queryKey: keys.deal(deal.id) }),
       queryClient.invalidateQueries({ queryKey: keys.documents(deal.id) }),
       queryClient.invalidateQueries({ queryKey: keys.dealAnalysis(deal.id) }),
+      // Attaching a transcript flips `has_transcript` on a meeting, which is
+      // what its analysis panel gates its Run button on.
+      queryClient.invalidateQueries({ queryKey: keys.meetings(deal.id) }),
     ])
 
   const upload = useMutation({
@@ -183,6 +186,7 @@ export function DocumentsPage() {
   return (
     <div className="ui-stack">
       <DocumentUpload
+        dealId={deal.id}
         busy={upload.isPending}
         error={upload.error}
         onUpload={(input) => {

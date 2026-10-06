@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '../../lib/api'
+import { keys, meetings } from '../../lib/queries'
 import { clearKey } from '../../lib/formState'
 import {
   DOCUMENT_SOURCE_TYPES,
@@ -7,7 +9,7 @@ import {
   SUPPORTED_UPLOAD_EXTENSIONS,
 } from '../../lib/types'
 import type { DocumentSourceType } from '../../lib/types'
-import { formatBytes, humanise } from '../../lib/format'
+import { formatBytes, formatDate, humanise } from '../../lib/format'
 import { Button, Card, SelectField, TextField } from '../../components/ui'
 
 export interface UploadInput {
@@ -15,9 +17,12 @@ export interface UploadInput {
   source_type: DocumentSourceType
   title?: string
   occurred_at?: string
+  meeting_id?: string
 }
 
 export interface DocumentUploadProps {
+  /** Needed to list the meetings a transcript can be attached to. */
+  dealId: string
   busy?: boolean
   error?: unknown
   onUpload: (input: UploadInput) => void
@@ -53,18 +58,31 @@ const SOURCE_TYPE_HINTS: Record<DocumentSourceType, string> = {
  * but uploading 40 MiB to be told it was too big wastes the upload, and the
  * limit exists precisely because ingest is synchronous.
  */
-export function DocumentUpload({ busy, error, onUpload }: DocumentUploadProps) {
+export function DocumentUpload({ dealId, busy, error, onUpload }: DocumentUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [sourceType, setSourceType] = useState<DocumentSourceType>('meeting_transcript')
   const [title, setTitle] = useState('')
   const [occurredAt, setOccurredAt] = useState('')
+  const [meetingId, setMeetingId] = useState('')
   const [problems, setProblems] = useState<Record<string, string>>({})
+
+  // Only fetched when it can be used. A meeting that already has a transcript
+  // is excluded rather than offered and refused: the server answers 409, and a
+  // dropdown that lists options it will reject is a worse form of the same
+  // message.
+  const meetingList = useQuery({
+    queryKey: keys.meetings(dealId),
+    queryFn: () => meetings.list(dealId),
+    enabled: sourceType === 'meeting_transcript',
+  })
+  const attachable = (meetingList.data ?? []).filter((m) => !m.has_transcript)
 
   const reset = () => {
     setFile(null)
     setTitle('')
     setOccurredAt('')
+    setMeetingId('')
     setProblems({})
     // The native input keeps its own value, so clearing state is not enough:
     // without this, re-picking the same file fires no `change` event.
@@ -96,6 +114,9 @@ export function DocumentUpload({ busy, error, onUpload }: DocumentUploadProps) {
       // it -- the server defaults to now, and the plan is explicit that a
       // backfilled transcript should always carry its real date.
       occurred_at: occurredAt || undefined,
+      // Sent only for a transcript. Pairing it with any other source type is
+      // a 422, so the control is hidden rather than disabled in that case.
+      meeting_id: sourceType === 'meeting_transcript' ? meetingId || undefined : undefined,
     })
   }
 
@@ -123,6 +144,10 @@ export function DocumentUpload({ busy, error, onUpload }: DocumentUploadProps) {
         return { heading: 'That file is too large', body: error.message }
       case 415:
         return { heading: 'That file cannot be read', body: error.message }
+      case 409:
+        // Two distinct 409s: these bytes are on another deal, or the chosen
+        // meeting already has a transcript. Both carry their own next step.
+        return { heading: 'That cannot be filed here', body: error.message }
       case 422:
         return { heading: 'Nothing to store', body: error.message }
       case 502:
@@ -205,6 +230,36 @@ export function DocumentUpload({ busy, error, onUpload }: DocumentUploadProps) {
               </option>
             ))}
           </SelectField>
+
+          {sourceType === 'meeting_transcript' && (
+            <div className="ui-span-2">
+              <SelectField
+                label="Attach to meeting"
+                optional
+                value={meetingId}
+                disabled={meetingList.isPending}
+                hint={
+                  attachable.length === 0 && meetingList.isSuccess
+                    ? 'Every meeting on this deal already has a transcript. Without one attached, this file is stored and searchable but extraction will not read it.'
+                    : 'This is what makes a meeting analysable -- extraction reads only a meeting\u2019s own transcript. Left empty, the file is stored and searchable but nothing will extract from it.'
+                }
+                error={
+                  error instanceof ApiError ? error.fieldError('meeting_id') : undefined
+                }
+                onChange={(event) => setMeetingId(event.target.value)}
+              >
+                <option value="">
+                  {meetingList.isPending ? 'Loading meetings...' : 'Do not attach'}
+                </option>
+                {attachable.map((meeting) => (
+                  <option key={meeting.id} value={meeting.id}>
+                    {meeting.title}
+                    {meeting.scheduled_at ? ` -- ${formatDate(meeting.scheduled_at)}` : ''}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
 
           <TextField
             label="When it happened"
