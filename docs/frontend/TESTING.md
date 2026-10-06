@@ -102,18 +102,49 @@ It has 5 open risks, 3 meetings, 3 documents, 43 facts and 2 stakeholders.
 - [ ] Click **Resolve** on Maya Chen — she is internal, so there should be *no*
       Resolve button at all, only the `internal` badge.
 
-### A5. Facts — the honesty check
+### A5. Facts — the review queue
 
-- [ ] Facts tab. Blue banner at the top: **"This is a view, not a review
-      queue."**
-- [ ] Every row shows a grey **"Not validated"** badge.
-- [ ] Below each, smaller: **"Self-reported confidence 1.00 — … not a validation
-      result."**
-- [ ] **Nothing anywhere should read as "100% confident" or green.** All 43 facts
-      genuinely have confidence 1.00 and no verdict; if this screen makes that
-      look like validation, that is the single worst bug in the product.
-- [ ] Filter by type `Objection`, then `All types`. Rows change, no console error.
-- [ ] Footer note says quarantined facts are filtered out by the API.
+This screen was rebuilt once Gate 3 landed, and the seeded deal is the **wrong**
+place to test it: all 43 of its facts were inserted by the seeder, never went
+through the pipeline, and so have no Gate 1 verdict. Use the `ZZ eval` deal
+instead, which has real extracted facts with real verdicts.
+
+- [ ] Facts tab. A **"What this screen is"** card leads, explaining the two
+      things accepting can do and the difference between the Gate 1 badge and
+      the confidence figure.
+- [ ] That explanation appears **once**. If you see the confidence caveat
+      repeated on every row, you are on an old build — that was the specific
+      problem this redesign fixed.
+- [ ] The claim is the first thing on each row, not the fourth.
+- [ ] Verdict badges read as plain language — **"Quote is thin"**, **"Quote
+      checks out"** — never `partial` or `supported`.
+- [ ] Hover a **"Quote is thin"** badge. It should explain that the quote backs
+      part of the claim, usually because the span is too short, and that the
+      claim may still be right.
+- [ ] Type filters are **chips with counts**. Click one to filter, click again
+      to clear.
+- [ ] Every row shows its quote without being expanded. Reading it is the point.
+- [ ] Press **Why** on a row. It expands the span check, the self-reported
+      figure, and any additional quotes.
+
+Now the decision itself:
+
+- [ ] Find a **Commitment** row. Its button reads **"Accept → commitment"**.
+- [ ] Find any other type. Its button reads **"Confirm"**. The two are different
+      acts and must not share a label.
+- [ ] Press **Confirm** on a non-commitment fact. Toast says the next analysis
+      pass will take it into account. The row moves to **Decided**.
+- [ ] Press **"Accept → commitment"** on a commitment fact. Toast says it created
+      a commitment. The row gains a **"became a commitment"** badge.
+- [ ] Press it again if still offered — expect a 409 naming the commitment it
+      created, saying to delete that record rather than flip the status.
+- [ ] **Watch the deal header while you do several in a row.** The analysis badge
+      should move to **"Collecting edits"** and stay there while you keep
+      deciding, then to **"Queued"** once you stop. That debounce is deliberate:
+      twenty decisions should cause one analysis pass, not twenty.
+- [ ] **Reject** one. It is kept, not deleted — the record of what was proposed
+      and refused is the point.
+- [ ] The footer still discloses that quarantined facts cannot be requested.
 
 ### A6. The analysis panel and the worker
 
@@ -194,10 +225,17 @@ Prefix everything you create with **ZZ** so it is easy to find and delete after.
 - [ ] Upload a `.exe` or similar → expect **"That file cannot be read"** listing
       the supported extensions.
 - [ ] Upload an empty file → **"Nothing to store"**.
-- [ ] ⚠️ Now upload a `.txt` with `source_type` = **Meeting transcript**. **This
-      will fail with a 500.** That is the known backend bug, not a UI fault. The
-      UI should say the server failed and that the document was *probably not
-      stored*. Confirm it says that rather than showing a raw error.
+- [ ] Upload a `.txt` with `source_type` = **Meeting transcript**. A
+      **"Attach to meeting"** select should appear once you pick that type,
+      listing only meetings that have no transcript yet. Pick one and upload.
+- [ ] That meeting's **Analysis** panel should now offer **Run analysis** instead
+      of "No transcript attached". Press it, and watch it move through Queued to
+      Analysed (a few minutes — one model call per extracted fact).
+- [ ] Try uploading a second transcript to the **same** meeting. Expect a 409
+      explaining that replacing it would strand the facts from the old document.
+- [ ] Try uploading a file that already exists on a **different** deal. Expect a
+      409 saying the bytes are filed elsewhere — not a misleading "already
+      stored".
 
 ### B6. Chat and streaming
 
@@ -251,9 +289,11 @@ Prefix everything you create with **ZZ** so it is easy to find and delete after.
 | | |
 | --- | --- |
 | Transcript upload returns 500 | Backend bug. `touch_deal` expires `deal.last_activity_at`, then `detect._gone_quiet` lazy-loads it outside the greenlet. Two-line fix, not yet applied. |
-| All facts show confidence 1.00 / "Not validated" | True of the data. Gate 1 has not validated this corpus. The UI is reporting it correctly. |
+| The **seeded** deal's 43 facts show "Not checked" | True of that data. They were inserted by the seeder, so `should_extract` skipped extraction and Gate 1 never ran on them. Use a `ZZ eval` deal for real verdicts. |
+| Confidence is 1.00 on every fact | True of the extractor, on every run so far. That is why it is labelled self-reported and never rendered as a verdict. |
+| Many facts read "Quote is thin" | Real, and measured: 20 of 32 on the first run. The extractor cited fragments. `extract@3` addresses it; compare runs to see whether it worked. |
 | Risk level shows "not assessed" | The rollup is null until an analysis sets it. Correct, not a blank. |
-| Facts cannot be accepted or rejected | No endpoint exists. Phase 9 is read-only by design. |
+| ~~Facts cannot be accepted or rejected~~ | **Fixed.** `PATCH /deals/{id}/facts/{id}` exists. Only `commitment` promotes; the rest are confirmed. |
 | Chat message order can shift between reads | `chat_messages` orders by `created_at` alone. Known backend gap. |
 | No timeline on Overview | `GET /deals/{id}/timeline` does not exist. |
 
