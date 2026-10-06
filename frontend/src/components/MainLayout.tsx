@@ -1,20 +1,25 @@
-import { useState } from 'react'
+import { Outlet } from 'react-router'
+import { useSidebarState } from '../lib/useSidebarState'
 import { Sidebar } from './Sidebar'
-import { TAB_LABELS, type TabKey } from './tabs'
+import { BootCheck } from './BootCheck'
 import './Layout.css'
 
+/**
+ * Task 0.4. The `useState<TabKey>` is gone and the content area is an
+ * `<Outlet/>`; the sidebar reads the active page from the URL.
+ */
 export function MainLayout() {
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
+  // Owned here rather than inside `Sidebar`, because the shell needs the class
+  // too -- the content area's width is the other half of collapsing.
+  const { collapsed, toggle } = useSidebarState()
 
   return (
-    <div className="app-shell">
-      <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} />
+    <div className={`app-shell${collapsed ? ' is-collapsed' : ''}`}>
+      <Sidebar collapsed={collapsed} onToggle={toggle} />
 
       <main className="app-content">
-        <div className="app-content-inner">
-          <h1>{TAB_LABELS[activeTab]}</h1>
-          <p className="app-content-hint">This is the {TAB_LABELS[activeTab]} tab.</p>
-        </div>
+        <BootCheck />
+        <Outlet />
       </main>
     </div>
   )

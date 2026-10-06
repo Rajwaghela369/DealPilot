@@ -227,8 +227,20 @@ migration is generated.
 
 ## Out of scope
 
-Seed/synthetic data · API routes · repositories and services · ingest worker ·
-LangGraph agents · CRM suggestion tables · `ai_runs` · Langfuse wiring.
+Seed/synthetic data · ingest worker · LangGraph agents · CRM suggestion
+tables · `ai_runs` · Langfuse wiring.
+
+**API routes are no longer out of scope.** 48 endpoints are built and mounted
+under `/api/v1`, covering Layer A (deals, stakeholders, stage history, tasks,
+meetings, attendees), Layer B (documents, chunk fetch) and the built half of
+Layer C (risks, recommendations, commitments, and the deterministic detector).
+A `services/` layer holds the multi-statement writes. See `docs/api/README.md`.
+
+Migrations `0004`–`0009` came out of that work; each is documented in its own
+docstring and summarised in the root `README.md`.
+
+Still out of scope: chat, the extraction agent, the Evidence Validator
+(Gates 1–2), `meeting_briefs`, and the seeder.
 
 When seeding does start, it writes **Layer A + `documents.raw_text` only** —
 never `extracted_facts`, `commitments`, `risks` or `recommendations`. Those must

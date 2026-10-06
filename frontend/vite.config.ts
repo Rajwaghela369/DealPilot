@@ -15,6 +15,13 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // `/health` is deliberately unversioned and outside `/api` (see the
+      // docstring in `app/main.py`), so the rule above does not reach it and
+      // the boot check would 404 against the Vite dev server instead.
+      '/health': {
+        target: process.env.VITE_API_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

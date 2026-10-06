@@ -1,0 +1,27 @@
+/* Phase 11: the task table. */
+
+.task__check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.task__check:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* A completed task stays in the list when the filter allows it, but reads as
+ * finished rather than competing with open work. */
+.deal-cell__name.is-done {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+.task__overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--danger);
+}

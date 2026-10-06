@@ -1,4 +1,4 @@
-# DealPilot — Data Model
+# CogniDeal — Data Model
 
 The schema for the MVP: a single-user, evidence-grounded sales copilot backed by
 Postgres + pgvector. No auth, no organizations, no CRM integration.
@@ -108,7 +108,9 @@ several deals with the same company, and the selling metadata is per-deal.
 
 | Column         | Type / reference                                                  |
 | --------------- | -------------------------------------------------------------------- |
-| —              | `PK(deal_id, contact_id)`                                           |
+| `id`           | uuid, PK                                                             |
+| `deal_id`      | → `deals`, `UNIQUE(deal_id, contact_id)`                             |
+| `contact_id`   | → `contacts`                                                         |
 | `buying_role`  | `∈ (champion, economic_buyer, technical, blocker, influencer, unknown)` |
 | `influence`    |                                                                      |
 | `sentiment`    |                                                                      |
@@ -119,6 +121,46 @@ several deals with the same company, and the selling metadata is per-deal.
 
 This table is what makes *"no economic buyer has ever attended a meeting"* a SQL
 query instead of a model's guess. Missing-stakeholder detection lives or dies here.
+
+**`(deal_id, contact_id)` is still the identity.** It is what the API addresses a
+row by — `/api/v1/deals/{deal_id}/stakeholders/{contact_id}` — and the UNIQUE constraint
+enforces it exactly as the old composite primary key did. The surrogate `id` is
+internal and never appears in a request or a response.
+
+It exists because `extracted_facts.promoted_to_id` is a single `uuid`. That column
+is how a fact a human accepted records the Layer A row it became, and
+`deal_contacts` was the one promotion target it could not name: a pair is not a
+uuid. A `stakeholder` fact could be accepted but never record where it went. Every
+other promotion target already had a surrogate key. Added in
+`0004_deal_contacts_id`.
+
+**`is_primary` means *the* main contact on this deal** — whose name the pipeline
+row shows, who the follow-up goes to. Distinct from `buying_role='champion'` (who
+sells for you internally) and from `economic_buyer` (who signs); a deal can have a
+champion who is not your day-to-day contact. The word doing the work is *the*:
+
+```sql
+CREATE UNIQUE INDEX uq_deal_contacts_deal_id_primary ON deal_contacts (deal_id)
+  WHERE is_primary;
+```
+
+At most one per deal, zero allowed. Without it two rows can both carry the flag
+and `… WHERE is_primary LIMIT 1` returns whichever the planner picks — an answer
+free to change between two identical requests. The path there is the ordinary UI
+flow, not an edge case: flag Priya, later flag Marcus, nobody unflags Priya.
+
+The cost is an ordering rule on every writer. Partial uniqueness can only ever be
+an *index*, never a constraint — a constraint cannot carry a `WHERE` — so it can
+never be `DEFERRABLE`, and it is checked at the end of each statement. Demoting
+the incumbent must therefore happen in an **earlier statement**, not merely the
+same transaction. Reverse the order and every primary swap fails. See
+`services/deal.py::demote_primary_stakeholder`.
+
+**Writes are human-only.** Layer A is what a salesperson owns, so the analyzer
+never writes `buying_role` or `sentiment` directly — it writes `extracted_facts`
+with `status='pending'`, and a human accepting one is what creates or updates the
+link. That is why this table carries no `origin` / `confidence` columns while
+every Layer C table does: there is nothing here the model wrote.
 
 ### `deal_stage_history`
 
@@ -133,6 +175,28 @@ query instead of a model's guess. Missing-stakeholder detection lives or dies he
 
 Feeds stalled-deal risk detection. Cheap to maintain, impossible to reconstruct
 later if skipped.
+
+**Append-only, and the API is read-only.** `GET /api/v1/deals/{deal_id}/stage-history` is the
+whole surface. The only writer is `services/deal.py::apply_stage_change`, reached
+through `PATCH /api/v1/deals/{deal_id}` with a `stage`, which writes the history row,
+`deals.stage` and `closed_at` in one transaction. An endpoint that appended here
+independently would let the history say a deal reached `negotiation` while
+`deals.stage` still said `discovery` — the same drift the missing `status` column
+exists to prevent. No `PATCH` or `DELETE`: the table carries `created_at` and no
+`updated_at` because a transition is a thing that happened, and a fumbled stage
+change leaves two honest rows rather than one edited one.
+
+Every read is "one deal's transitions, in order" — the timeline, and the `LEAD()`
+that derives time-in-stage from it — so the index is composite and `deal_id`-leading
+(`ix_deal_stage_history_deal_id_changed_at`, `0005_stage_history_idx`), which serves
+the plain lookup too.
+
+**`stalled_days` is not `stale_days`.** `deals.last_activity_at` answers "has anyone
+talked to them"; the newest row here answers "is any of that talking moving the
+deal". A deal with weekly check-ins and no stage movement for two months looks
+healthy to the first question and is exactly what `RiskType.STALLED_STAGE` is for.
+Both are filters on `GET /api/v1/deals`; the derivation lives once, in
+`queries.py::STAGE_CHANGED_AT`.
 
 ### `meetings`
 
@@ -198,22 +262,54 @@ to a known person, not the other way round. Two reasons:
 
 Powers the dashboard's overdue-actions panel and the deal's next action.
 
-### `activities`
+### `activities` — dropped in `0007_drop_activities`
 
-| Column            | Type / reference       |
-| ------------------ | ------------------------- |
-| `id`              | uuid, PK                 |
-| `deal_id`         | → `deals`                |
-| `contact_id`      | nullable                 |
-| `meeting_id`      | nullable                 |
-| `activity_type`   |                          |
-| `summary`         |                          |
-| `occurred_at`     |                          |
-| `created_at`      |                          |
+The timeline is **derived**, not stored. Every one of the table's seven
+`activity_type` values already had a primary home:
 
-Append-only timeline log. Optional — the deal timeline can instead be a
-`UNION ALL` over meetings, tasks, stage history and documents. Keeping the table
-costs a write per event; dropping it costs a slower, messier timeline query.
+| `activity_type` | where that event actually lives |
+| ---------------- | -------------------------------- |
+| `meeting` | `meetings` |
+| `stage_change` | `deal_stage_history` |
+| `task_completed` | `tasks.completed_at` |
+| `document_upload` | `documents.uploaded_at` |
+| `email` | `documents`, `source_type='email'` |
+| `note` | `documents`, `source_type='note'` |
+| `call` | `meetings`, `meeting_type='check_in'`, no transcript |
+
+Not one was a primary record, which makes `activities` the same pattern this
+document rejects twice above — no `next_action` column, no `status` column —
+for the same reason: **a stored copy drifts from what it copies.**
+
+The cost of keeping it was a write inside every service that touches a deal:
+`apply_stage_change`, task status, meeting create and status, document upload,
+attendee resolve. Any one of those forgotten produces a timeline that is
+silently incomplete, which is worse than no timeline because it looks complete.
+
+The deal timeline is a `UNION ALL` over the four source tables, discriminated
+by the same vocabulary:
+
+```sql
+SELECT 'meeting'        AS kind, title,    scheduled_at AS occurred_at FROM meetings            WHERE deal_id = :d
+UNION ALL
+SELECT 'stage_change',        to_stage, changed_at                     FROM deal_stage_history  WHERE deal_id = :d
+UNION ALL
+SELECT 'task_completed',      title,    completed_at                   FROM tasks               WHERE deal_id = :d AND status = 'done'
+UNION ALL
+SELECT 'document_upload',     title,    uploaded_at                    FROM documents           WHERE deal_id = :d
+ORDER BY occurred_at DESC
+LIMIT :n;
+```
+
+Already served by `ix_meetings_deal_id_scheduled_at`,
+`ix_deal_stage_history_deal_id_changed_at` and `ix_tasks_open_due_date`. It
+cannot drift, because there is nothing to keep in sync.
+
+**The `ActivityType` enum is kept.** It stops being a column and becomes the
+discriminator the `UNION` emits per row.
+
+Reversible if the trade ever flips: the table was append-only, so
+`0007`'s `downgrade()` recreates it and the same query backfills it.
 
 ---
 
@@ -229,21 +325,45 @@ costs a write per event; dropping it costs a slower, messier timeline query.
 | `source_type`         | `∈ (meeting_transcript, email, proposal, contract, note)`           |
 | `title`               |                                                                      |
 | `original_filename`   |                                                                      |
-| `storage_uri`         |                                                                      |
+| `storage_uri`         | **not null** — object key in MinIO, `documents/{content_hash}`        |
 | `mime_type`           |                                                                      |
 | `byte_size`           |                                                                      |
-| `content_hash`        |                                                                      |
-| `raw_text`            | `text`                                                               |
+| `content_hash`        | **not null** — sha256; the idempotency key *and* the storage key      |
 | `occurred_at`         |                                                                      |
 | `uploaded_at`         |                                                                      |
-| `ingest_status`       | `∈ (pending, parsing, chunking, embedding, ready, failed)`           |
-| `ingest_error`        |                                                                      |
 | `created_at`          |                                                                      |
 | `updated_at`          |                                                                      |
 
 **One table for every unstructured input.** Separate tables per type would fork
 retrieval five ways for no benefit — a RAG query wants "everything relevant to
 this deal," not five unions.
+
+**A row exists only when the document is fully ingested** — text extracted,
+chunks written, bytes in object storage. `ingest_status` and `ingest_error` were
+dropped in `0008_document_all_or_nothing` because there is no half-ingested
+state to report: anything that fails leaves no row, so every document the API
+returns is usable.
+
+That pushes the guarantee into the write ordering, since MinIO and Postgres
+cannot share a transaction:
+
+```
+extract text → split chunks → INSERT (flush, NOT committed)
+                            → PUT to object storage
+                            → COMMIT
+```
+
+The Postgres transaction stays open across the upload. A failed upload rolls the
+rows back with no compensation code to get wrong; a crash before the commit
+leaves an orphaned object — invisible, harmless, reapable. Committing first would
+leave a visible document whose bytes were never written and whose preview 404s.
+Deletes follow the same rule in reverse. **Postgres is the source of truth;
+object storage may hold orphans, never the reverse.**
+
+**`raw_text` is gone too**, and was always redundant: the chunks ordered by
+`chunk_index` *are* the text. The original file is served from object storage
+for preview, so keeping both meant two copies of one thing that could disagree
+after a re-ingest.
 
 - `occurred_at` ≠ `uploaded_at`. Recency ranking must use **when the conversation
   happened**, not when the file was dragged in. A transcript from June uploaded
@@ -271,7 +391,17 @@ retrieved chunk into a **clickable citation** rather than an unattributed blob.
 **Chunks are immutable.** If a document is re-ingested, write a new set of chunks
 and retain the old ones. Re-chunking in place silently rots every citation that
 already points into that document, and Gate 0 (§5) starts failing claims that
-were perfectly good.
+were perfectly good. In practice re-ingest is delete-and-re-upload, so nothing
+in the API can re-cut an existing document.
+
+**`embedding` is NULL for now.** Nothing retrieves by similarity in the MVP, and
+computing embeddings at upload would put an external API call inside a request
+that is synchronous by design (see `documents` above). The chunks and their
+offsets do not change, so embeddings can be backfilled in a batch job when
+search lands — no citation rots. Until then `document_chunks` exists to serve
+**citations**: a chunk id plus char offsets, so a Layer C claim can point at an
+exact span. That is a different reason to chunk than RAG, and it means the HNSW
+index sits unused.
 
 ---
 
@@ -404,22 +534,82 @@ within a week.
 
 ### `recommendations`
 
-| Column             | Type / reference          |
-| -------------------- | ---------------------------- |
-| `id`               | uuid, PK                     |
-| `deal_id`          | → `deals`                    |
-| `title`            |                              |
-| `description`      |                              |
-| `rationale`        |                              |
-| `action_type`      |                              |
-| `priority`         |                              |
-| `confidence`       |                              |
-| `status`           |                              |
-| `generated_at`     |                              |
-| `decided_at`       |                              |
-| `created_task_id`  | → `tasks` (nullable)         |
-| `created_at`       |                              |
-| `updated_at`       |                              |
+| Column              | Type / reference                                              |
+| --------------------- | ---------------------------------------------------------------- |
+| `id`                | uuid, PK                                                        |
+| `deal_id`           | → `deals`                                                       |
+| `source_risk_id`    | → `risks` (nullable, `ON DELETE SET NULL`)                      |
+| `title`             |                                                                 |
+| `description`       |                                                                 |
+| `rationale`         |                                                                 |
+| `action_type`       |                                                                 |
+| `priority`          |                                                                 |
+| `confidence`        |                                                                 |
+| `status`            | `∈ (suggested, accepted, dismissed, completed)`                 |
+| `origin`            |                                                                 |
+| `generated_at`      |                                                                 |
+| `decided_at`        |                                                                 |
+| `created_task_id`   | → `tasks` (nullable)                                            |
+| `dismissal_reason`  | `∈ (already_handled, not_relevant, wrong, bad_timing, other)`   |
+| `dismissal_note`    | `text`                                                          |
+| `created_at`        |                                                                 |
+| `updated_at`        |                                                                 |
+
+```sql
+CREATE UNIQUE INDEX uq_recommendations_deal_id_source_risk_id_suggested
+  ON recommendations (deal_id, source_risk_id)
+  WHERE status = 'suggested' AND source_risk_id IS NOT NULL;
+```
+
+**The proposal layer, distinct from `tasks`.** A recommendation is *suggested*
+work; a task is *committed* work. `next_action` only ever comes from tasks —
+from things a person agreed to — so the model can propose but never silently put
+work on someone's list:
+
+```
+risk  →  recommendation  →  [human accepts]  →  task  →  next_action
+```
+
+`source_risk_id` was added in `0009_recommendation_provenance`. Before it the two
+tables had no link at all — only shared `evidence` rows, which is a poor thing to
+assemble a UI from, and the risk panel shows one card per risk with its suggested
+action inline. Nullable because a *proactive* recommendation has no risk behind
+it; `SET NULL` rather than `CASCADE` because an accepted recommendation and its
+task are real work that should outlive the risk that prompted them.
+
+**Dismissal is recorded, not deleted.** Without it the detector re-suggests the
+same thing on every run. `dismissal_reason` is countable — "40% are `wrong`" says
+the detector needs work, "40% are `already_handled`" says it is right but late —
+while `dismissal_note` carries the detail a count cannot.
+
+The partial unique index is keyed on the **risk**, not `action_type`: two risks
+legitimately share an action type (`no_economic_buyer` and `single_threaded` both
+map to `engage_stakeholder`), and keying on the action silently dropped the
+second one's advice. Scoped to `suggested` so a dismissal does not block a fresh
+suggestion later if circumstances change.
+
+**`status='completed'` is never written.** It is derivable from
+`created_task_id`'s task being done — the same rule that keeps `next_action` off
+the `deals` table.
+
+### The deterministic detector
+
+Four of the ten `risk_type` values need no model at all — they are joins over
+tables that already exist, so a cited risk panel works before any agent does:
+
+| rule | evidence |
+| ---- | -------- |
+| `no_economic_buyer` — nobody who can say yes has *attended* | `record` → the listed-but-absent `deal_contacts` row, or `derived` when none is listed |
+| `single_threaded` — one external attendee across all meetings | `derived` |
+| `stalled_stage` — past the per-stage threshold in `queries.py` | `record` → newest `deal_stage_history.changed_at` |
+| `close_date_at_risk` — close date near, stage not yet negotiation | `record` → `deals.expected_close_date` |
+
+Each risk also produces one recommendation from a `RiskType → ActionType`
+mapping; the two enums line up one-for-one by design. Detection **upserts** —
+`uq_risks_deal_id_risk_type_open` exists so a re-run bumps `last_seen_at` rather
+than adding a fifth "single-threaded" — and a risk that no longer detects is
+auto-*resolved* rather than deleted, scoped to these four types so an
+LLM-detected risk is not resolved by a pass that cannot see it.
 
 ### `meeting_briefs`
 

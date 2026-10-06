@@ -1,5 +1,5 @@
 {
-  "name": "dealpilot",
+  "name": "cognideal",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,8 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "react-router": "^7.18.4",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

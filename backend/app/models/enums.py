@@ -131,15 +131,6 @@ class DocumentSourceType(str, Enum):
     NOTE = "note"
 
 
-class IngestStatus(str, Enum):
-    PENDING = "pending"
-    PARSING = "parsing"
-    CHUNKING = "chunking"
-    EMBEDDING = "embedding"
-    READY = "ready"
-    FAILED = "failed"
-
-
 class SourceKind(str, Enum):
     """What a piece of evidence points at.
 
@@ -287,6 +278,26 @@ class RiskType(str, Enum):
     COMPETITOR_PRESSURE = "competitor_pressure"
     MISSED_COMMITMENT = "missed_commitment"
     GONE_QUIET = "gone_quiet"
+    # For a risk the model names itself. `risk_key` carries the slug, and
+    # together they are the identity the partial unique index keys on. See
+    # migration 0013.
+    OTHER = "other"
+
+
+class DismissalReason(str, Enum):
+    """Why a human said no to a recommendation.
+
+    Countable on purpose. "40% of dismissals are `wrong`" says the detector
+    needs work; "40% are `already_handled`" says it is right but late. A single
+    free-text field would give neither -- which is why `dismissal_note` exists
+    alongside it for the detail.
+    """
+
+    ALREADY_HANDLED = "already_handled"
+    NOT_RELEVANT = "not_relevant"
+    WRONG = "wrong"
+    BAD_TIMING = "bad_timing"
+    OTHER = "other"
 
 
 class ActionType(str, Enum):
@@ -297,6 +308,13 @@ class ActionType(str, Enum):
     UPDATE_CLOSE_DATE = "update_close_date"
     ADDRESS_OBJECTION = "address_objection"
     INTERNAL_ESCALATION = "internal_escalation"
+    # Not an action to take -- a proposed *data correction*, which is why it
+    # reads oddly beside the others. Stage 7 of the pipeline concludes that an
+    # open commitment now looks satisfied; that is a claim about a row, not
+    # advice. Filing it under the nearest action would corrupt the action-type
+    # and dismissal_reason distributions, so it gets its own value. See
+    # migration 0015 and app/ai/stages.py::reconcile_commitments.
+    CORRECT_RECORD = "correct_record"
 
 
 # --------------------------------------------------------------------------
@@ -319,7 +337,6 @@ meeting_status_enum = pg_enum(MeetingStatus, "meeting_status")
 analysis_status_enum = pg_enum(AnalysisStatus, "analysis_status")
 task_status_enum = pg_enum(TaskStatus, "task_status")
 document_source_type_enum = pg_enum(DocumentSourceType, "document_source_type")
-ingest_status_enum = pg_enum(IngestStatus, "ingest_status")
 source_kind_enum = pg_enum(SourceKind, "source_kind")
 claim_type_enum = pg_enum(ClaimType, "claim_type")
 verification_status_enum = pg_enum(VerificationStatus, "verification_status")
