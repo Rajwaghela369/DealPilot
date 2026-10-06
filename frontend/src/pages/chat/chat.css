@@ -1,10 +1,34 @@
 /* Phase 10: the assistant. */
 
+/* A conversation is not a reading measure.
+ *
+ * Every other page caps at 1280px and centres, which is right for a table or a
+ * form. A chat thread wants the room -- answers contain lists, tables and code
+ * -- so this one spans the content area and aligns left. `--embedded` is the
+ * deal mount, which lives inside DealLayout's own `.page` and so must not add a
+ * second max-width and margin of its own. */
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: none;
+  margin: 0;
+}
+
+.chat-page--embedded {
+  /* The deal header above it is already inside a `.page`, so this inherits the
+   * width rather than setting one. */
+  width: 100%;
+}
+
 .chat {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
+  /* Fill the viewport below the header rather than sitting in a 520px box.
+   * The floor keeps it usable on a short window; the thread scrolls inside. */
+  min-height: min(76vh, 900px);
 }
 
 @media (max-width: 860px) {
@@ -16,6 +40,10 @@
 /* --- Session list --- */
 
 .chat__sessions {
+  /* Scrolls independently so a long session list cannot push the thread
+   * out of the viewport. */
+  max-height: min(76vh, 900px);
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
@@ -91,7 +119,9 @@
 .chat__thread {
   display: flex;
   flex-direction: column;
-  min-height: 520px;
+  /* Grows to the grid row's height instead of declaring its own, so the
+   * composer sits at the bottom of the available space. */
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
@@ -103,13 +133,14 @@
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-5);
-  /* Capped so the composer stays on screen in a long conversation. */
-  max-height: 60vh;
+  /* No cap: the thread's own height is bounded by the grid, so this scrolls
+   * within whatever room that leaves and the composer stays put. */
+  min-height: 0;
   overflow-y: auto;
 }
 
 .chat__bubble {
-  max-width: 80%;
+  max-width: 72ch;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
@@ -125,6 +156,8 @@
 
 .chat__bubble.is-assistant {
   align-self: flex-start;
+  /* Answers carry structure, so they get the room a question does not. */
+  max-width: min(92%, 104ch);
   background: var(--surface);
   border: 1px solid var(--border);
 }

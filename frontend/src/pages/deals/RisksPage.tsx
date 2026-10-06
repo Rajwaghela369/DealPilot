@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { keys, recommendations, risks } from '../../lib/queries'
+import { SEVERITIES } from '../../lib/types'
 import type {
   RecommendationAccept,
   RecommendationDetail,
@@ -9,7 +10,7 @@ import type {
   RiskUpdate,
   Severity,
 } from '../../lib/types'
-import { formatRelative, humanise } from '../../lib/format'
+import { formatDateTime, formatRelative, humanise } from '../../lib/format'
 import { errorMessage } from '../../lib/errorMessage'
 import type { BadgeTone } from '../../components/ui/Badge'
 import { Badge, Button, Card, EmptyState, ErrorState, LoadingBlock, useToast } from '../../components/ui'
@@ -58,22 +59,30 @@ function severityTone(severity: Severity): BadgeTone {
   }
 }
 
+const isLive = (r: RiskListItem) => r.status === 'open' || r.status === 'mitigating'
+
 /**
- * Phase 6. The product.
+ * Phase 6, restructured the same way the Facts tab was.
  *
- * Everything before this was plumbing to make this screen trustworthy, and
- * the structure follows from one rule: **nothing here changes a row without a
- * human pressing something.** `risk -> recommendation -> [human accepts] ->
- * task` is the whole shape of the thing, so both decision buttons open a
- * dialog that demands an input the suggestion cannot supply -- a due date, or
- * a reason.
+ * The content was right and the hierarchy was wrong. Every card led with four
+ * badges before the thing you actually read; the evidence button sat at the
+ * bottom with the same weight as a status menu; and nothing on the screen said
+ * what accepting or dismissing would *do* -- so the two controls that write
+ * rows looked like filters.
  *
- * Two stacked sections, as the plan lays out. Risks come first with their
- * recommendation nested, because two parallel lists would make someone read
- * "no economic buyer" in one panel and "engage a stakeholder" in another and
- * work out that they are the same thing. The second section is only the
- * *proactive* recommendations -- the ones with no `source_risk_id`, which the
- * risk panel structurally cannot show.
+ * Four changes, each moving information to where it earns its place:
+ *
+ * 1. **What the screen is, said once.** The chain this product rests on
+ *    (`risk -> recommendation -> you accept -> task`) was documented in code
+ *    comments and nowhere a user could see it.
+ * 2. **Severity becomes triage.** Counts as filter chips, so "two high and one
+ *    critical" is legible before reading a single card.
+ * 3. **Evidence is promoted to the primary action.** It is the trust anchor of
+ *    the whole product and it was the third control on the row.
+ * 4. **Badge noise cut.** `origin` appeared on every card reading "detected",
+ *    which is the default and therefore not information; it now shows only for
+ *    the exception, and the same for `open`. Timestamps moved behind "Why",
+ *    which is where detail that matters once belongs.
  */
 export function RisksPage() {
   const deal = useDeal()
@@ -83,14 +92,14 @@ export function RisksPage() {
 
   const [accepting, setAccepting] = useState<RecommendationDetail | null>(null)
   const [dismissing, setDismissing] = useState<RecommendationDetail | null>(null)
+  const [severityFilter, setSeverityFilter] = useState<Severity | null>(null)
   /**
    * Arrived from a task's "from a suggestion" link?
    *
-   * Then the target recommendation must be on screen, and it may be nested in
-   * a risk that was since resolved or dismissed -- which this toggle hides by
-   * default. Read from the hash as *lazy initial state* rather than in an
-   * effect: setting state in an effect body renders twice and is what the
-   * forms in phases 1-3 had to be restructured to avoid.
+   * Then the target recommendation must be on screen, and it may be nested in a
+   * risk that was since resolved -- which this toggle hides by default. Read
+   * from the hash as lazy initial state rather than in an effect, to stay clear
+   * of the `set-state-in-effect` rule.
    */
   const [showDecided, setShowDecided] = useState(
     () => typeof window !== 'undefined' && window.location.hash.startsWith('#rec-'),
@@ -107,12 +116,23 @@ export function RisksPage() {
   })
 
   /**
-   * Task 6.4: accepting writes a task, so `['tasks']` is invalidated too.
+   * Scroll a linked recommendation into view.
    *
-   * And `['deals', dealId]` for the header, whose `open_risks` and
-   * `open_tasks` counts both move. The deal's analysis state is left alone --
-   * a human decision does not mark the deal dirty.
+   * A browser scrolls to a hash on a real navigation, but an SPA route change
+   * resolves before the data does, so by the time the card exists the moment
+   * has passed. A DOM side effect, which is what effects are for.
    */
+  useEffect(() => {
+    if (!riskList.isSuccess && !recList.isSuccess) return
+    const hash = window.location.hash
+    if (!hash.startsWith('#rec-')) return
+    const el = document.getElementById(hash.slice(1))
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.add('is-linked')
+  }, [riskList.isSuccess, recList.isSuccess])
+
+  /** Accepting writes a task, so `['tasks']` is invalidated too. */
   const invalidateDecision = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: keys.risks(deal.id) }),
@@ -130,7 +150,7 @@ export function RisksPage() {
       toast.success(`Created a task from "${rec.title}".`)
     },
     // No toast on failure: the 409s name what already happened and belong in
-    // the dialog, which keeps them beside the button that was refused.
+    // the dialog, beside the button that was refused.
   })
 
   const dismiss = useMutation({
@@ -156,218 +176,200 @@ export function RisksPage() {
     onError: (error) => toast.error(errorMessage(error)),
   })
 
-  /**
-   * Scroll a linked recommendation into view.
-   *
-   * A browser scrolls to a hash on a real navigation, but an SPA route change
-   * resolves before the data does, so by the time the card exists the moment
-   * has passed. Keyed on the fetch finishing rather than on mount for the same
-   * reason. A DOM side effect, which is what effects are actually for.
-   */
-  useEffect(() => {
-    if (!riskList.isSuccess && !recList.isSuccess) return
-    const hash = window.location.hash
-    if (!hash.startsWith('#rec-')) return
-    const target = document.getElementById(hash.slice(1))
-    if (!target) return
-    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    target.classList.add('is-linked')
-  }, [riskList.isSuccess, recList.isSuccess])
+  const all = riskList.data ?? []
+  const live = all.filter(isLive)
+  const closed = all.filter((r) => !isLive(r))
+  const bySeverity = (s: Severity) => live.filter((r) => r.severity === s).length
+  const uncited = live.filter((r) => r.evidence_count === 0).length
+  const awaiting = (recList.data ?? []).filter((r) => r.status === 'suggested').length
 
-  const allRisks = riskList.data ?? []
-  const liveRisks = allRisks.filter((r) => r.status === 'open' || r.status === 'mitigating')
-  const closedRisks = allRisks.filter((r) => r.status !== 'open' && r.status !== 'mitigating')
-  const shownRisks = showDecided ? allRisks : liveRisks
-
+  const pool = showDecided ? all : live
+  const shown = severityFilter ? pool.filter((r) => r.severity === severityFilter) : pool
   // Only the proactive ones. The rest are nested in their risk cards, and
   // showing them twice would double every suggestion on the page.
   const proactive = (recList.data ?? []).filter((r) => r.source_risk_id === null)
 
   return (
     <div className="ui-stack">
+      {/* Said once. These two paragraphs previously existed only in code
+          comments, which is the wrong audience for them. */}
       <Card
-        title="Risks"
-        description="Live risks first, then worst first. Each one carries the evidence it rests on."
-        actions={
-          closedRisks.length > 0 ? (
-            <Button size="sm" variant="ghost" onClick={() => setShowDecided((v) => !v)}>
-              {showDecided
-                ? 'Hide decided'
-                : `Show ${closedRisks.length} decided`}
-            </Button>
-          ) : undefined
-        }
-        flush
+        title="What this screen is"
+        description="The detector finds problems and suggests what to do. You decide what becomes work."
       >
-        {riskList.isPending ? (
-          <LoadingBlock label="Loading risks..." />
-        ) : riskList.isError ? (
-          <ErrorState error={riskList.error} onRetry={riskList.refetch} />
-        ) : shownRisks.length === 0 ? (
-          /* Task 6.7. An empty list is good news and never means "AI is off":
-             six of the ten risk types are deterministic joins over tables
-             that already exist and run with no model call at all. So the
-             copy says what an empty list *does* mean rather than leaving
-             someone to wonder whether anything ran. */
-          <EmptyState
-            title={allRisks.length === 0 ? 'No risks detected' : 'No live risks'}
-            body={
-              allRisks.length === 0
-                ? 'That is good news, not a missing feature. Most of these checks are deterministic joins over existing records and need no model, so an empty list means the checks ran and found nothing.'
-                : 'Every detected risk has been resolved or dismissed.'
-            }
-            actions={
-              closedRisks.length > 0 && !showDecided ? (
-                <Button size="sm" onClick={() => setShowDecided(true)}>
-                  Show {closedRisks.length} decided
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <ul className="risk-list">
-            {shownRisks.map((risk) => (
-              <li
-                key={risk.id}
-                className={`risk-card${risk.status === 'open' || risk.status === 'mitigating' ? '' : ' is-closed'}`}
-              >
-                <div className="risk-card__head">
-                  <Badge tone={severityTone(risk.severity)}>{humanise(risk.severity)}</Badge>
-                  <Badge tone={risk.status === 'open' || risk.status === 'mitigating' ? 'neutral' : 'ok'}>
-                    {humanise(risk.status)}
-                  </Badge>
-                  <Badge
-                    tone="neutral"
-                    title={`Written by ${risk.origin === 'ai' ? 'the model or detector' : 'a person'}`}
-                  >
-                    {risk.origin === 'ai' ? 'detected' : 'manual'}
-                  </Badge>
-                  {/* `risk_type` is `other` when the model named the risk
-                      itself. `risk_key` holds the slug but is not exposed in
-                      any response schema, so the model-written `title` is
-                      what identifies it -- which reads fine, and is why this
-                      renders like any other card. */}
-                  <span className="ui-muted risk-card__type">
-                    {risk.risk_type === 'other' ? 'model-named' : humanise(risk.risk_type)}
-                  </span>
-                </div>
+        <div className="facts-legend">
+          <div>
+            <h4 className="brief__heading">Nothing here changes on its own</h4>
+            <p className="facts-legend__body">
+              A risk is a problem the detector found; below it sits the action it suggests.{' '}
+              <strong>Accepting</strong> turns that suggestion into a real task with a due
+              date you set &mdash; it is the only control on this page that creates work.{' '}
+              <strong>Dismissing</strong> records why you said no, which is what stops the
+              detector raising it again, so the reason is a real input rather than a shrug.
+            </p>
+          </div>
+          <div>
+            <h4 className="brief__heading">An empty list is good news</h4>
+            <p className="facts-legend__body">
+              Six of the ten checks are plain database queries needing no model at all, so
+              they run whether or not the AI layer is on. Nothing listed means the checks
+              ran and found nothing &mdash; it never means the analysis is switched off.
+              Every card carries the evidence it rests on; open it before acting.
+            </p>
+          </div>
+        </div>
 
-                <h3 className="risk-card__title">{risk.title}</h3>
-                {risk.description && <p className="risk-card__body">{risk.description}</p>}
-
-                {risk.recommendation && (
-                  <RecommendationCard
-                    recommendation={
-                      {
-                        ...risk.recommendation,
-                        deal_id: deal.id,
-                        source_risk_id: risk.id,
-                        description: null,
-                        confidence: null,
-                        origin: risk.origin,
-                        dismissal_note: null,
-                        generated_at: risk.first_detected_at,
-                        decided_at: null,
-                      } as RecommendationDetail
-                    }
-                    onAccept={() =>
-                      setAccepting(widen(risk, deal.id))
-                    }
-                    onDismiss={() =>
-                      setDismissing(widen(risk, deal.id))
-                    }
-                  />
-                )}
-
-                <div className="risk-card__foot">
-                  {/* Task 6.1: the evidence button, on every card. A zero
-                      count is shown as a refusal rather than hidden -- a
-                      risk with no citations is asserting something uncited,
-                      which is the one thing this product must not do
-                      quietly. */}
-                  {risk.evidence_count > 0 ? (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        openEvidence({
-                          dealId: deal.id,
-                          claimType: 'risk',
-                          claimId: risk.id,
-                          claimTitle: risk.title,
-                        })
-                      }
-                    >
-                      {risk.evidence_count} source{risk.evidence_count === 1 ? '' : 's'}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() =>
-                        openEvidence({
-                          dealId: deal.id,
-                          claimType: 'risk',
-                          claimId: risk.id,
-                          claimTitle: risk.title,
-                        })
-                      }
-                    >
-                      No evidence
-                    </Button>
-                  )}
-
-                  <RiskStatusControl
-                    risk={risk}
-                    busy={updateRisk.isPending}
-                    error={updateRisk.error}
-                    onSubmit={(body) => updateRisk.mutate({ riskId: risk.id, body })}
-                  />
-
-                  <span className="ui-muted risk-card__seen">
-                    first seen {formatRelative(risk.first_detected_at)} &middot; last confirmed{' '}
-                    {formatRelative(risk.last_seen_at)}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+        {uncited > 0 && (
+          /* A risk with no citations asserts something uncited, which is the
+             one thing this product must not do quietly. A count here, and red
+             on the card itself. */
+          <div className="ui-callout ui-callout--danger facts-legend__note">
+            <strong>
+              {uncited} live {uncited === 1 ? 'risk has' : 'risks have'} no evidence recorded.
+            </strong>{' '}
+            That is a defect rather than a quiet absence &mdash; nothing currently backs the
+            claim, and Gate 0 should have caught it on insert.
+          </div>
         )}
       </Card>
 
-      {/* The proactive recommendations. A second section rather than a second
-          list of everything: anything with a `source_risk_id` is already
-          above, inside the risk it belongs to. */}
-      {recList.isError ? (
-        <Card title="Recommendations">
-          <ErrorState error={recList.error} onRetry={recList.refetch} />
+      {riskList.isPending ? (
+        <Card>
+          <LoadingBlock label="Loading risks..." />
         </Card>
-      ) : proactive.length > 0 ? (
-        <Card
-          title="Other suggestions"
-          description="Not tied to a detected risk, so they appear nowhere above."
-          flush
-        >
-          <div className="rec-list">
-            {proactive.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                recommendation={rec}
-                showEvidence
-                onShowEvidence={() =>
-                  openEvidence({
-                    dealId: deal.id,
-                    claimType: 'recommendation',
-                    claimId: rec.id,
-                    claimTitle: rec.title,
-                  })
+      ) : riskList.isError ? (
+        <Card>
+          <ErrorState error={riskList.error} onRetry={riskList.refetch} />
+        </Card>
+      ) : (
+        <>
+          {live.length > 0 && (
+            /* Triage. Severity was a badge you had to read card by card; as
+               chips with counts the shape of the deal is legible at a glance. */
+            <div className="facts-chips">
+              <button
+                type="button"
+                className={`facts-chip${severityFilter === null ? ' is-active' : ''}`}
+                onClick={() => setSeverityFilter(null)}
+              >
+                All live <span className="facts-chip__count">{live.length}</span>
+              </button>
+              {[...SEVERITIES].reverse().map((s) =>
+                bySeverity(s) > 0 ? (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`facts-chip${severityFilter === s ? ' is-active' : ''}`}
+                    onClick={() => setSeverityFilter(severityFilter === s ? null : s)}
+                  >
+                    {humanise(s)} <span className="facts-chip__count">{bySeverity(s)}</span>
+                  </button>
+                ) : null,
+              )}
+              {closed.length > 0 && (
+                <button
+                  type="button"
+                  className={`facts-chip${showDecided ? ' is-active' : ''}`}
+                  onClick={() => setShowDecided((v) => !v)}
+                >
+                  Include decided <span className="facts-chip__count">{closed.length}</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          <Card
+            title={
+              live.length > 0
+                ? `${live.length} live ${live.length === 1 ? 'risk' : 'risks'}`
+                : 'No live risks'
+            }
+            description={
+              awaiting > 0
+                ? `${awaiting} suggestion${awaiting === 1 ? '' : 's'} awaiting your decision. Worst first.`
+                : 'Worst first. Nothing is awaiting a decision.'
+            }
+            flush
+          >
+            {shown.length === 0 ? (
+              /* Task 6.7. An empty list is good news and never means "AI is
+                 off" -- six of the ten risk types need no model at all. */
+              <EmptyState
+                title={all.length === 0 ? 'No risks detected' : 'Nothing matches'}
+                body={
+                  all.length === 0
+                    ? 'The checks ran and found nothing. Most of them are deterministic queries over records that already exist, so this is a real result rather than a missing feature.'
+                    : severityFilter
+                      ? `No live ${severityFilter} risks.`
+                      : 'Every detected risk has been resolved or dismissed.'
                 }
-                onAccept={() => setAccepting(rec)}
-                onDismiss={() => setDismissing(rec)}
+                actions={
+                  closed.length > 0 && !showDecided ? (
+                    <Button size="sm" onClick={() => setShowDecided(true)}>
+                      Show {closed.length} decided
+                    </Button>
+                  ) : undefined
+                }
               />
-            ))}
-          </div>
-        </Card>
-      ) : null}
+            ) : (
+              <ul className="risk-list">
+                {shown.map((risk) => (
+                  <RiskCard
+                    key={risk.id}
+                    risk={risk}
+                    dealId={deal.id}
+                    busy={updateRisk.isPending}
+                    error={updateRisk.error}
+                    onEvidence={() =>
+                      openEvidence({
+                        dealId: deal.id,
+                        claimType: 'risk',
+                        claimId: risk.id,
+                        claimTitle: risk.title,
+                      })
+                    }
+                    onStatus={(body) => updateRisk.mutate({ riskId: risk.id, body })}
+                    onAccept={() => setAccepting(widen(risk, deal.id))}
+                    onDismiss={() => setDismissing(widen(risk, deal.id))}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {recList.isError ? (
+            <Card title="Other suggestions">
+              <ErrorState error={recList.error} onRetry={recList.refetch} />
+            </Card>
+          ) : proactive.length > 0 ? (
+            <Card
+              title="Other suggestions"
+              description="Advice not tied to a detected problem, so it appears under no risk above."
+              flush
+            >
+              <div className="rec-list">
+                {proactive.map((rec) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    showEvidence
+                    onShowEvidence={() =>
+                      openEvidence({
+                        dealId: deal.id,
+                        claimType: 'recommendation',
+                        claimId: rec.id,
+                        claimTitle: rec.title,
+                      })
+                    }
+                    onAccept={() => setAccepting(rec)}
+                    onDismiss={() => setDismissing(rec)}
+                  />
+                ))}
+              </div>
+            </Card>
+          ) : null}
+        </>
+      )}
 
       {accepting && (
         <AcceptDialog
@@ -397,5 +399,109 @@ export function RisksPage() {
 
       <EvidenceDrawer target={target} onClose={closeEvidence} />
     </div>
+  )
+}
+
+function RiskCard({
+  risk,
+  dealId,
+  busy,
+  error,
+  onEvidence,
+  onStatus,
+  onAccept,
+  onDismiss,
+}: {
+  risk: RiskListItem
+  dealId: string
+  busy: boolean
+  error: unknown
+  onEvidence: () => void
+  onStatus: (body: RiskUpdate) => void
+  onAccept: () => void
+  onDismiss: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const live = isLive(risk)
+
+  return (
+    <li className={`risk-card risk-card--${risk.severity}${live ? '' : ' is-closed'}`}>
+      <div className="risk-card__main">
+        {/* The title leads. It used to sit below four badges. */}
+        <h3 className="risk-card__title">{risk.title}</h3>
+
+        <div className="risk-card__head">
+          <Badge tone={severityTone(risk.severity)}>{humanise(risk.severity)}</Badge>
+          {/* `open` is the default and says nothing, so only a moved status
+              shows. Same for `detected`, which was on every single card. */}
+          {risk.status !== 'open' && (
+            <Badge tone={live ? 'info' : 'ok'}>{humanise(risk.status)}</Badge>
+          )}
+          {risk.origin !== 'ai' && (
+            <Badge tone="neutral" title="Recorded by a person, not the detector.">
+              added by hand
+            </Badge>
+          )}
+          <span className="ui-muted risk-card__type">
+            {/* `risk_type` is `other` when the model named the risk itself.
+                `risk_key` holds the slug but no response schema returns it, so
+                the model-written title is what identifies it. */}
+            {risk.risk_type === 'other' ? 'model-named' : humanise(risk.risk_type)}
+          </span>
+        </div>
+
+        {risk.description && <p className="risk-card__body">{risk.description}</p>}
+
+        {risk.recommendation && (
+          <RecommendationCard
+            recommendation={widen(risk, dealId)}
+            onAccept={onAccept}
+            onDismiss={onDismiss}
+          />
+        )}
+
+        {open && (
+          <dl className="fact__meta risk-card__detail">
+            <div>
+              <dt>First detected</dt>
+              <dd>{formatDateTime(risk.first_detected_at)}</dd>
+            </div>
+            <div>
+              <dt>Last confirmed</dt>
+              <dd>{formatRelative(risk.last_seen_at)}</dd>
+            </div>
+            {risk.resolved_at && (
+              <div>
+                <dt>Resolved</dt>
+                <dd>{formatDateTime(risk.resolved_at)}</dd>
+              </div>
+            )}
+            <div>
+              <dt>Check</dt>
+              <dd>{risk.risk_type}</dd>
+            </div>
+          </dl>
+        )}
+      </div>
+
+      <div className="risk-card__actions">
+        {/* Promoted to primary. The product's whole claim is that nothing is
+            asserted without a path back to what backs it, which makes this the
+            most important button on the page -- and it was the third. */}
+        {risk.evidence_count > 0 ? (
+          <Button size="sm" variant="primary" onClick={onEvidence}>
+            {risk.evidence_count} source{risk.evidence_count === 1 ? '' : 's'}
+          </Button>
+        ) : (
+          <Button size="sm" variant="danger" onClick={onEvidence}>
+            No evidence
+          </Button>
+        )}
+        <RiskStatusControl risk={risk} busy={busy} error={error} onSubmit={onStatus} />
+        <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Less' : 'Why'}
+        </Button>
+      </div>
+    </li>
   )
 }

@@ -17,6 +17,7 @@ import {
   useToast,
 } from '../../components/ui'
 import { ChunkQuote } from '../../components/evidence'
+import { Markdown } from '../../components/Markdown'
 import { PageHeader } from '../../components/PageHeader'
 import { CitationList } from './CitationList'
 import { citationToEvidence } from './citationToEvidence'
@@ -183,8 +184,13 @@ export function ChatPage({ dealId, title, subtitle }: ChatPageProps) {
 
   const busy = streaming !== null
 
+  // `embedded` is the deal mount, which already sits inside DealLayout's
+  // `.page`. A second one applied `max-width: 1280px; margin: 0 auto` twice,
+  // which is what made the deal chat read as narrow and off-centre.
+  const embedded = Boolean(dealId)
+
   return (
-    <div className="page">
+    <div className={embedded ? 'chat-page chat-page--embedded' : 'page chat-page'}>
       <PageHeader
         title={title}
         subtitle={subtitle}
@@ -291,7 +297,10 @@ export function ChatPage({ dealId, title, subtitle }: ChatPageProps) {
                     {streaming && (
                       <div className="chat__bubble is-assistant">
                         {streaming.content ? (
-                          <p className="chat__text">{streaming.content}</p>
+                          // Rendered while streaming, so a list or heading
+                          // forms as it arrives instead of reflowing when the
+                          // persisted message replaces it on `done`.
+                          <Markdown>{streaming.content}</Markdown>
                         ) : (
                           !streaming.error && (
                             <p className="chat__typing">
@@ -423,7 +432,14 @@ function MessageBubble({
   const isUser = message.role === 'user'
   return (
     <div className={`chat__bubble is-${isUser ? 'user' : 'assistant'}`}>
-      <p className="chat__text">{message.content}</p>
+      {/* Only the assistant writes markdown. A user's message is rendered
+          literally -- interpreting their asterisks or hashes as formatting
+          would silently rewrite what they typed. */}
+      {isUser ? (
+        <p className="chat__text">{message.content}</p>
+      ) : (
+        <Markdown>{message.content}</Markdown>
+      )}
       {!isUser && message.citations.length > 0 && (
         <CitationList citations={message.citations} onOpen={onOpenCitation} />
       )}

@@ -312,10 +312,60 @@
 
 .risk-card {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
   padding: var(--space-5);
   border-bottom: 1px solid var(--border);
+  /* A severity edge, set per-severity below. Carries the triage signal
+   * without spending a badge on it, so the title can lead. */
+  border-left: 3px solid transparent;
+}
+
+.risk-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.risk-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  width: 170px;
+}
+
+.risk-card--critical,
+.risk-card--high {
+  border-left-color: var(--danger-border);
+}
+
+.risk-card--medium {
+  border-left-color: var(--warn-border);
+}
+
+.risk-card--low {
+  border-left-color: var(--border-strong);
+}
+
+.risk-card__detail {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-strong);
+}
+
+@media (max-width: 720px) {
+  .risk-card {
+    flex-direction: column;
+  }
+
+  .risk-card__actions {
+    flex-direction: row;
+    width: auto;
+  }
 }
 
 .risk-card:last-child {
@@ -383,17 +433,6 @@
   color: var(--text-dim);
 }
 
-.risk-card__foot {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  margin-top: var(--space-1);
-}
-
-.risk-card__seen {
-  font-size: var(--text-xs);
-}
 
 /* ------------------------------------------- Recommendation cards (p6) */
 
