@@ -52,6 +52,7 @@ import type {
   ChatSession,
   DealParticipant,
   DealStakeholder,
+  FactDecision,
   FactFilters,
   FactListItem,
   ParticipantFilters,
@@ -581,6 +582,20 @@ export const facts = {
    */
   list: (dealId: string, filters: FactFilters = {}) =>
     apiJson<FactListItem[]>(`/deals/${dealId}/facts`, { query: filters }),
+
+  /**
+   * Gate 3: accept or reject one proposal.
+   *
+   * Two 409s worth rendering as sentences: a `superseded` fact (a later
+   * extraction replaced it, so decide that one instead) and a fact that has
+   * already promoted (its commitment is a real row -- deleting that is what
+   * undoes this, not a status flip).
+   */
+  decide: (dealId: string, factId: string, body: FactDecision) =>
+    apiJson<FactListItem>(`/deals/${dealId}/facts/${factId}`, {
+      method: 'PATCH',
+      body,
+    }),
 }
 
 // ------------------------------------------------------------- Tasks (p11)

@@ -988,8 +988,36 @@ export interface FactListItem {
   meeting_id: string | null
   document_id: string | null
   extracted_at: string | null
+  /**
+   * Where accepting this fact sent it.
+   *
+   * Only `commitment` facts promote -- their payload is the one that maps onto
+   * an existing table. For the other seven, accepting *confirms*: the status
+   * change is the whole effect, and it is what makes the fact visible to the AI
+   * detector, whose dossier selects `WHERE status = 'accepted'`. So a null here
+   * on an accepted fact is correct, not a failure.
+   */
+  promoted_to_type: string | null
+  promoted_to_id: string | null
   /** Inline, so the table needs no second call. A fact with none cannot exist. */
   evidence: FactEvidence[]
+}
+
+/** Gate 3. Only the two states a human is actually adjudicating. */
+export interface FactDecision {
+  status: 'accepted' | 'rejected'
+}
+
+/**
+ * Does accepting this category create a row somewhere, or only confirm it?
+ *
+ * Mirrors `PROMOTION_TARGETS` in `services/facts.py`. Kept in the client so the
+ * button can say which of the two things it is about to do -- "Accept" means
+ * materially different acts for a commitment and for a competitor, and one
+ * label for both is how a review queue becomes untrustworthy.
+ */
+export function promotesOnAccept(factType: string): boolean {
+  return factType === 'commitment'
 }
 
 export interface FactFilters {
