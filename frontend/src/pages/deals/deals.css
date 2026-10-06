@@ -759,3 +759,12 @@
     animation: none;
   }
 }
+
+/* A measured notice at the top of a flush card -- data about the list below,
+ * as opposed to the help text behind the ⓘ. Needs its own inset because the
+ * card body is flush for the list. */
+.facts-notice {
+  margin: var(--space-4) var(--space-5) 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}

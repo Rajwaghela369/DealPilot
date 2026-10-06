@@ -578,3 +578,85 @@
   font-size: var(--text-base);
   color: var(--text-h);
 }
+
+/* ----------------------------------------------- Card help disclosure
+ *
+ * An ⓘ in the card header, collapsed by default. Screens that need explaining
+ * used to carry it as permanent prose, which charges every return visit the
+ * space the first visit needed -- and text that is always present stops being
+ * read.
+ */
+
+.ui-info-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  /* A serif lowercase i reads as the information glyph at this size, where the
+   * sans-serif one is an ambiguous bar. */
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease), color var(--ease);
+}
+
+.ui-info-toggle:hover {
+  border-color: var(--accent-border);
+  color: var(--text-h);
+}
+
+.ui-info-toggle.is-open {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--text-h);
+}
+
+.ui-card__info {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.ui-card__info p {
+  margin: 0;
+}
+
+.ui-card__info p + p {
+  margin-top: var(--space-3);
+}
+
+.ui-card__info strong {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+/* A definition-style help list: term, then what it means. Reads better than
+ * prose for "these three words mean these three things". */
+.ui-card__info dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.ui-card__info dt {
+  color: var(--text-h);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ui-card__info dd {
+  margin: 0;
+}

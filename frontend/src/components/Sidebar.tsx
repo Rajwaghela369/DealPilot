@@ -84,12 +84,32 @@ const NAV: NavItem[] = [
  * the pipeline table left "Pipeline" highlighted while the workspace was
  * open, and a reload landed on the dashboard whatever the URL said.
  */
-export function Sidebar() {
+export interface SidebarProps {
+  collapsed: boolean
+  onToggle: () => void
+}
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
         <span className="sidebar-brand-mark" />
-        <span className="sidebar-brand-name">DealPilot</span>
+        {!collapsed && <span className="sidebar-brand-name">DealPilot</span>}
+        <button
+          type="button"
+          className="sidebar-collapse"
+          onClick={onToggle}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path
+              d={collapsed ? 'M6 4l4 4-4 4' : 'M10 4L6 8l4 4'}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       </div>
 
       <nav className="sidebar-nav">
@@ -99,9 +119,12 @@ export function Sidebar() {
             to={item.to}
             end={item.end}
             className={({ isActive }) => `sidebar-tab${isActive ? ' active' : ''}`}
+            // The only affordance left when the label is hidden, so it is not
+            // optional in the collapsed state.
+            title={collapsed ? item.label : undefined}
           >
             <span className="sidebar-tab-icon">{item.icon}</span>
-            <span>{item.label}</span>
+            {!collapsed && <span className="sidebar-tab-label">{item.label}</span>}
           </NavLink>
         ))}
       </nav>

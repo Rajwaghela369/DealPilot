@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ApiError } from '../../lib/api'
 import { deals, keys } from '../../lib/queries'
+import { DEAL_STAGES } from '../../lib/types'
 import type { DealCreate, DealFilters, DealListItem } from '../../lib/types'
 import { useDebounced } from '../../lib/useDebounced'
 import { EMPTY, formatDate, formatMoney, formatRelative, humanise, riskTone, stageTone } from '../../lib/format'
@@ -37,7 +38,24 @@ export function PipelinePage() {
   const queryClient = useQueryClient()
   const toast = useToast()
 
-  const [filters, setFilters] = useState<DealFilters>({ sort: '-last_activity_at' })
+  /**
+   * The dashboard's stage legend links here with `?stage=`, so that link has to
+   * actually filter -- a link that looks like it narrows the table and does not
+   * is worse than no link.
+   *
+   * Read once, as lazy initial state, rather than kept in sync with the URL:
+   * the filter bar is the owner once you are on the page, and writing every
+   * control back to the query string would fight it.
+   */
+  const [searchParams] = useSearchParams()
+  const [filters, setFilters] = useState<DealFilters>(() => {
+    const stage = searchParams.get('stage')
+    const valid = stage && (DEAL_STAGES as readonly string[]).includes(stage)
+    return {
+      sort: '-last_activity_at',
+      ...(valid ? { stage: [stage as (typeof DEAL_STAGES)[number]], open: true } : {}),
+    }
+  })
   const [search, setSearch] = useState('')
   const [offset, setOffset] = useState(0)
   const [creating, setCreating] = useState(false)

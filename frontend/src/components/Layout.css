@@ -9,8 +9,15 @@
 
 /* Sidebar */
 
+/* --- Collapsing ---
+ *
+ * Width is the only thing that animates: transitioning padding or font-size as
+ * well makes the labels shear rather than disappear, and the labels are removed
+ * from the DOM anyway so there is nothing to tween. */
+
 .sidebar {
   width: 240px;
+  transition: width var(--ease);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -25,6 +32,61 @@
   align-items: center;
   gap: 10px;
   padding: 0 8px;
+}
+
+.sidebar-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Pushed to the far edge when expanded; centred under the mark when not. */
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease), border-color var(--ease);
+}
+
+.sidebar-collapse svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-collapse:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text-h);
+}
+
+/* --- The collapsed state --- */
+
+.app-shell.is-collapsed .sidebar {
+  /* Icon plus its padding. Narrow enough to be worth collapsing, wide enough
+   * that the 18px icons keep a real hit area. */
+  width: 60px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.app-shell.is-collapsed .sidebar-brand {
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0;
+}
+
+.app-shell.is-collapsed .sidebar-collapse {
+  margin-left: 0;
+}
+
+.app-shell.is-collapsed .sidebar-tab {
+  /* Centre the icon rather than left-aligning it against a label that is no
+   * longer there. */
+  justify-content: center;
+  padding: 10px 0;
 }
 
 .sidebar-brand-mark {

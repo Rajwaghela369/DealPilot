@@ -136,52 +136,6 @@ export function FactsPage() {
 
   return (
     <div className="ui-stack">
-      {/* Everything general, said once. The per-row version of this is what
-          made the old screen unreadable. */}
-      <Card
-        title="What this screen is"
-        description="Extraction proposes; you decide. Nothing here is treated as true until you accept it."
-      >
-        <div className="facts-legend">
-          <div>
-            <h4 className="brief__heading">Accepting does one of two things</h4>
-            <p className="facts-legend__body">
-              A <strong>commitment</strong> becomes a real commitment record you can track
-              and that the detector measures against. Every other kind is{' '}
-              <strong>confirmed</strong> rather than promoted &mdash; there is no table a
-              competitor or a budget figure belongs in. Confirming still matters: it is
-              what puts the fact in front of the next analysis pass, which cannot see
-              anything still undecided.
-            </p>
-          </div>
-          <div>
-            <h4 className="brief__heading">Two numbers, and only one is a check</h4>
-            <p className="facts-legend__body">
-              The badge on each row is <strong>Gate 1</strong>: an independent pass that
-              re-reads the quote and asks whether it supports the claim. The{' '}
-              <strong>confidence</strong> figure is the extractor&rsquo;s own guess about
-              its own output &mdash; on this deal every single fact reports the maximum, so
-              it carries no information. It is shown for completeness and is never a
-              verdict.
-            </p>
-          </div>
-        </div>
-
-        {(thin > 0 || unchecked > 0) && (
-          <div className="ui-callout ui-callout--info facts-legend__note">
-            {thin > 0 && (
-              <>
-                <strong>{thin} of {all.length} have a thin quote.</strong> That usually
-                means the extractor cited a fragment rather than the full sentence &mdash;
-                the claim is often right while the evidence does not carry it on its own.
-                Read the quote before accepting.{' '}
-              </>
-            )}
-            {unchecked > 0 && <>{unchecked} have not been checked by Gate 1 at all.</>}
-          </div>
-        )}
-      </Card>
-
       {list.isPending ? (
         <Card>
           <LoadingBlock label="Loading facts..." />
@@ -222,14 +176,58 @@ export function FactsPage() {
           </div>
 
           <Card
-            title={pending.length > 0 ? `${pending.length} waiting for you` : 'Nothing waiting'}
+            title={pending.length > 0 ? `${pending.length} awaiting review` : 'Nothing awaiting review'}
             description={
               pending.length > 0
-                ? 'Read the quote, then decide. Rejecting is not destructive -- the row and its evidence are kept.'
+                ? 'Check the quote supports the claim, then accept or reject.'
                 : 'Every extracted fact on this deal has been decided.'
+            }
+            info={
+              <>
+                <p>
+                  Facts are extracted from meeting transcripts and proposed for review.
+                  Nothing is treated as true until you accept it.
+                </p>
+                <dl>
+                  <dt>Accept</dt>
+                  <dd>
+                    Commitments become trackable commitment records. Other kinds are marked
+                    confirmed, which makes them available to the next analysis pass.
+                  </dd>
+                  <dt>Reject</dt>
+                  <dd>
+                    Keeps the record and its evidence, excluded from analysis. Not a
+                    deletion.
+                  </dd>
+                  <dt>Quote badge</dt>
+                  <dd>
+                    An automated check of whether the quoted text supports the claim. The
+                    confidence figure beside it is the extractor&rsquo;s own estimate and is
+                    not a verification result.
+                  </dd>
+                </dl>
+                <p>
+                  Facts whose quote contradicts or fails to support the claim are withheld,
+                  so this list is not the full set of what was proposed.
+                </p>
+              </>
             }
             flush
           >
+            {thin > 0 && (
+              /* Data, not help -- a measured property of this deal's facts, so
+                 it stays visible rather than hiding behind the toggle. */
+              <div className="ui-callout ui-callout--info facts-notice">
+                <strong>
+                  {thin} of {all.length} have a thin quote.
+                </strong>{' '}
+                The cited span covers only part of the claim, usually because it is too
+                short. The claim may still be correct &mdash; read the quote before
+                accepting.
+                {unchecked > 0 && <> {unchecked} have not been checked.</>}
+              </div>
+            )}
+
             {pending.length === 0 ? (
               <EmptyState
                 title="All caught up"

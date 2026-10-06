@@ -191,48 +191,6 @@ export function RisksPage() {
 
   return (
     <div className="ui-stack">
-      {/* Said once. These two paragraphs previously existed only in code
-          comments, which is the wrong audience for them. */}
-      <Card
-        title="What this screen is"
-        description="The detector finds problems and suggests what to do. You decide what becomes work."
-      >
-        <div className="facts-legend">
-          <div>
-            <h4 className="brief__heading">Nothing here changes on its own</h4>
-            <p className="facts-legend__body">
-              A risk is a problem the detector found; below it sits the action it suggests.{' '}
-              <strong>Accepting</strong> turns that suggestion into a real task with a due
-              date you set &mdash; it is the only control on this page that creates work.{' '}
-              <strong>Dismissing</strong> records why you said no, which is what stops the
-              detector raising it again, so the reason is a real input rather than a shrug.
-            </p>
-          </div>
-          <div>
-            <h4 className="brief__heading">An empty list is good news</h4>
-            <p className="facts-legend__body">
-              Six of the ten checks are plain database queries needing no model at all, so
-              they run whether or not the AI layer is on. Nothing listed means the checks
-              ran and found nothing &mdash; it never means the analysis is switched off.
-              Every card carries the evidence it rests on; open it before acting.
-            </p>
-          </div>
-        </div>
-
-        {uncited > 0 && (
-          /* A risk with no citations asserts something uncited, which is the
-             one thing this product must not do quietly. A count here, and red
-             on the card itself. */
-          <div className="ui-callout ui-callout--danger facts-legend__note">
-            <strong>
-              {uncited} live {uncited === 1 ? 'risk has' : 'risks have'} no evidence recorded.
-            </strong>{' '}
-            That is a defect rather than a quiet absence &mdash; nothing currently backs the
-            claim, and Gate 0 should have caught it on insert.
-          </div>
-        )}
-      </Card>
-
       {riskList.isPending ? (
         <Card>
           <LoadingBlock label="Loading risks..." />
@@ -289,8 +247,50 @@ export function RisksPage() {
                 ? `${awaiting} suggestion${awaiting === 1 ? '' : 's'} awaiting your decision. Worst first.`
                 : 'Worst first. Nothing is awaiting a decision.'
             }
+            info={
+              <>
+                <p>
+                  Risks are detected from this deal&rsquo;s records and recent meetings. Each
+                  one carries the evidence it rests on.
+                </p>
+                <dl>
+                  <dt>Accept</dt>
+                  <dd>
+                    Turns the suggested action into a task with a due date you set. The only
+                    control here that creates work.
+                  </dd>
+                  <dt>Dismiss</dt>
+                  <dd>
+                    Records why the suggestion was declined, which prevents it being raised
+                    again. The reason is used, not just stored.
+                  </dd>
+                  <dt>Status</dt>
+                  <dd>
+                    Resolved means the situation changed. Dismissed means it did not matter
+                    &mdash; the two are counted separately.
+                  </dd>
+                </dl>
+                <p>
+                  Six of the ten checks are database queries requiring no model, so they run
+                  regardless of whether the AI layer is enabled. An empty list means the
+                  checks found nothing.
+                </p>
+              </>
+            }
             flush
           >
+            {uncited > 0 && (
+              /* Data, not help: a live count of claims with nothing behind
+                 them, which is a defect rather than a quiet absence. */
+              <div className="ui-callout ui-callout--danger facts-notice">
+                <strong>
+                  {uncited} live {uncited === 1 ? 'risk has' : 'risks have'} no evidence.
+                </strong>{' '}
+                Nothing currently supports the claim. This should not occur and is worth
+                reporting.
+              </div>
+            )}
+
             {shown.length === 0 ? (
               /* Task 6.7. An empty list is good news and never means "AI is
                  off" -- six of the ten risk types need no model at all. */
